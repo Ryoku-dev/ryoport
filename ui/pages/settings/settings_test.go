@@ -74,16 +74,16 @@ func TestWithTool(t *testing.T) {
 }
 
 func TestVisibleSection(t *testing.T) {
-	heights := []int{400, 900, 300, 300}
+	heights := []int{150, 900, 300, 300}
 	tests := []struct {
 		name string
 		pos  layout.Position
 		want int
 	}{
-		{"top of the page", layout.Position{BeforeEnd: true}, 0},
-		{"first still holds the top third", layout.Position{Offset: 100, BeforeEnd: true}, 0},
-		{"next takes over the top third", layout.Position{Offset: 300, BeforeEnd: true}, 1},
-		{"middle section on top", layout.Position{First: 1, Offset: 200, BeforeEnd: true}, 1},
+		{"a short first section is current at the very top", layout.Position{BeforeEnd: true}, 0},
+		{"next takes over once the first leaves the top third", layout.Position{Offset: 100, BeforeEnd: true}, 1},
+		{"middle section holds the top third", layout.Position{First: 1, Offset: 200, BeforeEnd: true}, 1},
+		{"next takes over from the middle", layout.Position{First: 1, Offset: 750, BeforeEnd: true}, 2},
 		{"scrolled to the very end", layout.Position{First: 1, Offset: 700}, 3},
 		{"everything fits without scrolling", layout.Position{}, 0},
 	}

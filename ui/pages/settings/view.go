@@ -143,11 +143,16 @@ func (v *View) handleSectionNavigation(gtx layout.Context, class env.Class) int 
 
 // visibleSection is the section that holds the top third of the view: the
 // first one on screen, unless less than a third of the view is still showing
-// it, in which case the next one has taken over. Scrolled to the very end,
-// it is the last section, which may never reach the top.
+// it, in which case the next one has taken over. At the very top it is the
+// first section however short; scrolled to the very end, it is the last
+// section, which may never reach the top.
 func visibleSection(pos layout.Position, heights []int, viewport int) int {
 	last := len(heights) - 1
-	if (pos.First > 0 || pos.Offset > 0) && !pos.BeforeEnd {
+	scrolled := pos.First > 0 || pos.Offset > 0
+	if !scrolled {
+		return 0
+	}
+	if !pos.BeforeEnd {
 		return last
 	}
 	current := min(max(pos.First, 0), last)
