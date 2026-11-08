@@ -39,6 +39,14 @@
           runHook postBuild
         '';
 
+        # buildGoModule's own check phase relies on helpers from the build
+        # phase replaced above, so run the suite the way the Makefile does.
+        checkPhase = ''
+          runHook preCheck
+          HOME="$TMPDIR" make test
+          runHook postCheck
+        '';
+
         installPhase = ''
           runHook preInstall
           make SKIP_BUILD=1 DESTDIR="$out" PREFIX= install
@@ -65,6 +73,7 @@
       apps.${system}.default = {
         type = "app";
         program = "${ryoport}/bin/ryoport";
+        meta = { inherit (ryoport.meta) description; };
       };
     };
 }
