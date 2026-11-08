@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"gioui.org/layout"
+
 	"github.com/ryoku-dev/ryoport/internal/update"
 )
 
@@ -68,5 +70,26 @@ func TestWithTool(t *testing.T) {
 	withGo := withTool(withoutGit, "go", true)
 	if strings.Join(withGo, ",") != "python,go" {
 		t.Fatalf("add go = %v", withGo)
+	}
+}
+
+func TestVisibleSection(t *testing.T) {
+	heights := []int{400, 900, 300, 300}
+	tests := []struct {
+		name string
+		pos  layout.Position
+		want int
+	}{
+		{"top of the page", layout.Position{BeforeEnd: true}, 0},
+		{"first still holds the top third", layout.Position{Offset: 100, BeforeEnd: true}, 0},
+		{"next takes over the top third", layout.Position{Offset: 300, BeforeEnd: true}, 1},
+		{"middle section on top", layout.Position{First: 1, Offset: 200, BeforeEnd: true}, 1},
+		{"scrolled to the very end", layout.Position{First: 1, Offset: 700}, 3},
+		{"everything fits without scrolling", layout.Position{}, 0},
+	}
+	for _, test := range tests {
+		if got := visibleSection(test.pos, heights, 600); got != test.want {
+			t.Errorf("%s: section %d, want %d", test.name, got, test.want)
+		}
 	}
 }

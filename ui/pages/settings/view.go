@@ -36,8 +36,18 @@ var settingsSections = [...]string{
 type View struct {
 	list         kit.List
 	sectionStrip layout.List
-	sectionLinks [7]kit.Click
-	sectionChips [7]kit.Button
+	sectionLinks [len(settingsSections)]kit.Click
+	sectionChips [len(settingsSections)]kit.Button
+	// Heights of the sections as last drawn, the list's height, and the
+	// section the index showed, so the index follows scrolling. A section
+	// picked from the index stays shown until the list is scrolled away from
+	// where the pick left it, even when the list cannot bring it to the top.
+	sectionHeights [len(settingsSections)]int
+	viewport       int
+	shownSection   int
+	picked         int
+	pickedAt       layout.Position
+	pickedSettled  bool
 
 	initialized      bool
 	catalogRequested bool
@@ -72,7 +82,7 @@ type View struct {
 }
 
 func New() *View {
-	view := &View{tools: make(map[string]*kit.Toggle)}
+	view := &View{tools: make(map[string]*kit.Toggle), picked: -1}
 	view.list.Axis = layout.Vertical
 	view.sectionStrip.Axis = layout.Horizontal
 	return view
@@ -110,22 +120,39 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 }
 
 func (v *View) handleSectionNavigation(gtx layout.Context, class env.Class) int {
-	current := min(max(v.list.Position.First, 0), len(settingsSections)-1)
-	switch class {
-	case env.Expanded:
-		for index := range settingsSections {
-			if v.sectionLinks[index].Clicked(gtx) {
-				v.list.ScrollTo(index)
-				current = index
-			}
+	for index := range settingsSections {
+		clicked := false
+		switch class {
+		case env.Expanded:
+			clicked = v.sectionLinks[index].Clicked(gtx)
+		case env.Medium:
+			clicked = v.sectionChips[index].Clicked(gtx)
 		}
-	case env.Medium:
-		for index := range settingsSections {
-			if v.sectionChips[index].Clicked(gtx) {
-				v.list.ScrollTo(index)
-				current = index
-			}
+		if clicked {
+			v.list.ScrollTo(index)
+			v.picked, v.pickedSettled = index, false
 		}
+	}
+	current := v.picked
+	if current < 0 {
+		current = visibleSection(v.list.Position, v.sectionHeights[:], v.viewport)
+	}
+	v.shownSection = current
+	return current
+}
+
+// visibleSection is the section that holds the top third of the view: the
+// first one on screen, unless less than a third of the view is still showing
+// it, in which case the next one has taken over. Scrolled to the very end,
+// it is the last section, which may never reach the top.
+func visibleSection(pos layout.Position, heights []int, viewport int) int {
+	last := len(heights) - 1
+	if (pos.First > 0 || pos.Offset > 0) && !pos.BeforeEnd {
+		return last
+	}
+	current := min(max(pos.First, 0), last)
+	if current < last && viewport > 0 && heights[current] > 0 && heights[current]-pos.Offset < viewport/3 {
+		current++
 	}
 	return current
 }
@@ -247,40 +274,35 @@ func centeredPane(gtx layout.Context, width int, body layout.Widget) layout.Dime
 }
 
 func (v *View) layoutList(gtx layout.Context, e *env.Env) layout.Dimensions {
-	return v.list.Layout(gtx, e.Th, len(settingsSections), func(gtx layout.Context, index int) layout.Dimensions {
-		switch index {
-		case 0:
-			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
-				return v.layoutAppearance(gtx, e)
-			})
-		case 1:
-			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
-				return v.layoutDefaults(gtx, e)
-			})
-		case 2:
-			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
-				return v.layoutEngine(gtx, e)
-			})
-		case 3:
-			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
-				return v.layoutGPU(gtx, e)
-			})
-		case 4:
-			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
-				return v.layoutKeys(gtx, e)
-			})
-		case 5:
-			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
-				return v.layoutUpdates(gtx, e)
-			})
-		case 6:
-			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
-				return v.layoutAbout(gtx, e)
-			})
-		default:
-			return layout.Dimensions{}
-		}
+	bodies := [len(settingsSections)]layout.Widget{
+		func(gtx layout.Context) layout.Dimensions { return v.layoutAppearance(gtx, e) },
+		func(gtx layout.Context) layout.Dimensions { return v.layoutDefaults(gtx, e) },
+		func(gtx layout.Context) layout.Dimensions { return v.layoutEngine(gtx, e) },
+		func(gtx layout.Context) layout.Dimensions { return v.layoutGPU(gtx, e) },
+		func(gtx layout.Context) layout.Dimensions { return v.layoutKeys(gtx, e) },
+		func(gtx layout.Context) layout.Dimensions { return v.layoutUpdates(gtx, e) },
+		func(gtx layout.Context) layout.Dimensions { return v.layoutAbout(gtx, e) },
+	}
+	dims := v.list.Layout(gtx, e.Th, len(settingsSections), func(gtx layout.Context, index int) layout.Dimensions {
+		section := settingsSection(gtx, e.Th, settingsSections[index], bodies[index])
+		v.sectionHeights[index] = section.Size.Y
+		return section
 	})
+	v.viewport = dims.Size.Y
+	if v.picked >= 0 {
+		at := v.list.Position
+		if !v.pickedSettled {
+			v.pickedAt, v.pickedSettled = at, true
+		} else if at.First != v.pickedAt.First || at.Offset != v.pickedAt.Offset {
+			v.picked = -1
+		}
+	}
+	// Scrolling moves the list during this frame, after the index was drawn;
+	// draw once more if the section on top changed so the index follows.
+	if v.picked < 0 && visibleSection(v.list.Position, v.sectionHeights[:], v.viewport) != v.shownSection {
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	return dims
 }
 
 func (v *View) initialize(settings config.Settings) {
