@@ -44,6 +44,26 @@ func TestProofSentenceNeedsAuth(t *testing.T) {
 	}
 }
 
+func TestProofSentenceFailedUnits(t *testing.T) {
+	for _, test := range []struct {
+		count int
+		want  string
+	}{
+		{count: 1, want: "Online. 1 failed unit."},
+		{count: 3, want: "Online. 3 failed units."},
+	} {
+		server := &store.Server{
+			Host:  remote.Host{Alias: "ally", HostName: "192.168.110.8"},
+			Reach: &remote.Reach{Alias: "ally", Up: true, SSHUp: true, RTTMs: -1},
+			Probe: &remote.Probe{Alias: "ally", OK: true, FailedUnits: test.count},
+		}
+		spans := proofSentence(server, nil, model.StateDegraded, time.Time{}, time.Time{})
+		if len(spans) != 1 || spans[0].Text != test.want {
+			t.Errorf("proofSentence() with %d failed units = %#v, want %q", test.count, spans, test.want)
+		}
+	}
+}
+
 func TestValidateDraft(t *testing.T) {
 	tests := []struct {
 		name  string

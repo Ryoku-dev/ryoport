@@ -43,6 +43,8 @@ type View struct {
 	tunnels   tunnelsTab
 	apps      appsTab
 	serverKey string
+	lastFrame uint64
+	hasFrame  bool
 }
 
 func New() *View {
@@ -53,25 +55,33 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	if e == nil || e.Snap == nil || e.Nav == nil || e.Ops == nil {
 		return layout.Dimensions{Size: gtx.Constraints.Min}
 	}
+	if v.hasFrame && e.Frame != v.lastFrame && e.Frame != v.lastFrame+1 {
+		v.closeTransient()
+	}
+	v.lastFrame = e.Frame
+	v.hasFrame = true
 	resource, ok := e.Snap.Resource(e.Nav.Selected)
 	if !ok || resource.Kind != model.KindServer {
 		v.serverKey = ""
+		v.closeTransient()
 		return layout.Dimensions{Size: gtx.Constraints.Min}
 	}
 	server := e.Snap.Servers[resource.ID.Key()]
 	if server == nil {
 		v.serverKey = ""
+		v.closeTransient()
 		return layout.Dimensions{Size: gtx.Constraints.Min}
 	}
 
 	needsAuth := resource.State == model.StateNeedsAuth || (server.Probe != nil && server.Probe.NeedAuth)
 	if v.serverKey != resource.ID.Key() {
 		v.serverKey = resource.ID.Key()
-		v.commandOpen = false
+		v.closeTransient()
 		v.command.SetText("")
-		v.connectPopover.Open = false
-		v.overflowPop.Open = false
 		v.auth.password.SetText("")
+	}
+	if !needsAuth {
+		v.handleActionClicks(gtx, e, resource)
 	}
 	selected := v.selectedTab(e)
 	header := func(gtx layout.Context) layout.Dimensions {
@@ -87,7 +97,7 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			}
 			if v.commandOpen {
 				below = func(gtx layout.Context) layout.Dimensions {
-					return v.layoutCommand(gtx, e, resource.ID.Key())
+					return v.layoutCommand(gtx, e)
 				}
 			}
 		}
@@ -140,8 +150,7 @@ func headerTone(state model.State, needsAuth bool) model.Tone {
 }
 
 func (v *View) layoutActions(gtx layout.Context, e *env.Env, resource model.Resource) layout.Dimensions {
-	alias := resource.ID.Key()
-	items := []kit.MenuItem{
+	connectItems := []kit.MenuItem{
 		{Icon: icons.Terminal, Label: "Connect"},
 		{Icon: icons.ContentCopy, Label: "Copy the ssh command"},
 	}
@@ -156,15 +165,14 @@ func (v *View) layoutActions(gtx layout.Context, e *env.Env, resource model.Reso
 		{Divider: true},
 		{Icon: icons.Delete, Label: "Remove", Danger: true},
 	}
-
-	dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return v.connectPopover.Layout(gtx,
 				func(gtx layout.Context) layout.Dimensions {
 					return v.connect.Layout(gtx, e.Th, kit.Gold, icons.Terminal, "Connect", v.connectPopover.Open)
 				},
 				func(gtx layout.Context) layout.Dimensions {
-					return v.connectMenu.Layout(gtx, e.Th, items)
+					return v.connectMenu.Layout(gtx, e.Th, connectItems)
 				},
 			)
 		}),
@@ -185,12 +193,20 @@ func (v *View) layoutActions(gtx layout.Context, e *env.Env, resource model.Reso
 			)
 		}),
 	)
+}
 
+func (v *View) handleActionClicks(gtx layout.Context, e *env.Env, resource model.Resource) {
+	alias := resource.ID.Key()
 	if v.connect.Main.Clicked(gtx) {
 		e.Ops.Connect(alias)
 	}
 	if v.connect.More.Clicked(gtx) {
-		v.connectPopover.Open = !v.connectPopover.Open
+		opening := !v.connectPopover.Open
+		v.connectPopover.Open = opening
+		if opening {
+			v.overflowPop.Open = false
+			v.commandOpen = false
+		}
 	}
 	if item, ok := v.connectMenu.Clicked(gtx); ok {
 		v.connectPopover.Open = false
@@ -209,10 +225,28 @@ func (v *View) layoutActions(gtx layout.Context, e *env.Env, resource model.Reso
 		e.Ops.OpenFiles(alias)
 	}
 	if v.runCommand.Clicked(gtx) {
-		v.commandOpen = !v.commandOpen
+		opening := !v.commandOpen
+		v.commandOpen = opening
+		if opening {
+			v.connectPopover.Open = false
+			v.overflowPop.Open = false
+		}
+	}
+	if v.commandOpen && v.sendCommand.Clicked(gtx) {
+		command := strings.TrimSpace(v.command.Text())
+		if command != "" {
+			e.Ops.RunCommand(alias, command)
+			v.command.SetText("")
+			v.commandOpen = false
+		}
 	}
 	if v.overflow.Clicked(gtx) {
-		v.overflowPop.Open = !v.overflowPop.Open
+		opening := !v.overflowPop.Open
+		v.overflowPop.Open = opening
+		if opening {
+			v.connectPopover.Open = false
+			v.commandOpen = false
+		}
 	}
 	if item, ok := v.overflowMenu.Clicked(gtx); ok {
 		v.overflowPop.Open = false
@@ -235,11 +269,16 @@ func (v *View) layoutActions(gtx layout.Context, e *env.Env, resource model.Reso
 			})
 		}
 	}
-	return dims
 }
 
-func (v *View) layoutCommand(gtx layout.Context, e *env.Env, alias string) layout.Dimensions {
-	dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.End, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
+func (v *View) closeTransient() {
+	v.connectPopover.Open = false
+	v.overflowPop.Open = false
+	v.commandOpen = false
+}
+
+func (v *View) layoutCommand(gtx layout.Context, e *env.Env) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return cappedField(gtx, func(gtx layout.Context) layout.Dimensions {
 				return v.command.Layout(gtx, e.Th, "Command", "uptime", "Runs in a terminal on the server.", "")
@@ -249,15 +288,6 @@ func (v *View) layoutCommand(gtx layout.Context, e *env.Env, alias string) layou
 			return v.sendCommand.Layout(gtx, e.Th, kit.Gold, icons.KeyboardReturn, "Run")
 		}),
 	)
-	if v.sendCommand.Clicked(gtx) {
-		command := strings.TrimSpace(v.command.Text())
-		if command != "" {
-			e.Ops.RunCommand(alias, command)
-			v.command.SetText("")
-			v.commandOpen = false
-		}
-	}
-	return dims
 }
 
 func proofSentence(server *store.Server, peers map[string]*store.Server, state model.State, updated, now time.Time) []common.Span {
@@ -295,6 +325,13 @@ func proofSentence(server *store.Server, peers map[string]*store.Server, state m
 		}
 	} else {
 		parts = append(parts, "Offline.")
+	}
+	if server.Probe != nil && server.Probe.FailedUnits > 0 {
+		unit := "units"
+		if server.Probe.FailedUnits == 1 {
+			unit = "unit"
+		}
+		parts = append(parts, fmt.Sprintf("%d failed %s.", server.Probe.FailedUnits, unit))
 	}
 	distro := ""
 	if server.Probe != nil {

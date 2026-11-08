@@ -65,6 +65,21 @@ func (h *Header) Layout(gtx layout.Context, e *env.Env, c HeaderContent) layout.
 					return layout.Inset{Top: th.Sp.S1}.Layout(gtx, kit.Text(th, th.T.Caption, th.R.Fg3, c.Note))
 				}))
 			}
+			if e.Nav != nil && e.Snap != nil && e.Nav.Shows(e.Nav.Selected) {
+				if resource, ok := e.Snap.Resource(e.Nav.Selected); ok {
+					marks, attention := ResourceMarks(resource)
+					if len(marks) > 0 {
+						if attention >= 0 {
+							marks[attention].Color = th.R.Amber
+						}
+						children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return layout.Inset{Top: th.Sp.S1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return Sentence(gtx, th, th.T.MonoSm, th.R.Fg3, marks)
+							})
+						}))
+					}
+				}
+			}
 			if c.Acts != nil {
 				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Inset{Top: th.Sp.S4}.Layout(gtx, c.Acts)

@@ -43,6 +43,9 @@ func TestProofForRunningMachineUsesStartEvent(t *testing.T) {
 	if got, want := spanText(proofFor(machine, resource, events, now)), "Running for 2 h. 2 cores, 4 GB."; got != want {
 		t.Fatalf("proof = %q, want %q", got, want)
 	}
+	if got, want := startedNote(resource, events, now), "◷ Started 2 h ago from Ryoport."; got != want {
+		t.Fatalf("started note = %q, want %q", got, want)
+	}
 }
 
 func TestProofForStoppedMachine(t *testing.T) {

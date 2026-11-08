@@ -39,6 +39,23 @@ func TestFilterCatalogByNameAndSlug(t *testing.T) {
 	}
 }
 
+func TestFilterCatalogRanksUsefulMatchesFirst(t *testing.T) {
+	systems := []build.OS{
+		{OS: "my-debian", Name: "Custom appliance"},
+		{OS: "debian-testing", Name: "Debian testing"},
+		{OS: "bookworm", Name: "GNU Debian Bookworm"},
+	}
+	gotSystems := filterCatalog(systems, "debian")
+	got := make([]string, len(gotSystems))
+	for i, system := range gotSystems {
+		got[i] = system.OS
+	}
+	want := []string{"debian-testing", "bookworm", "my-debian"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("filterCatalog() = %v, want %v", got, want)
+	}
+}
+
 func TestAvailableItemKindsForHost(t *testing.T) {
 	tests := []struct {
 		name         string

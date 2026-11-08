@@ -2,11 +2,14 @@ package machine
 
 import (
 	"fmt"
+	"image"
 	"strconv"
 	"strings"
 	"time"
 
 	"gioui.org/layout"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/store"
 	"github.com/ryoku-dev/ryoport/ui/env"
@@ -128,6 +131,15 @@ func transitionAt(events []model.Event, id model.ID, text string) (time.Time, bo
 	}
 	return time.Time{}, false
 }
+func startedNote(resource model.Resource, events []model.Event, now time.Time) string {
+	if resource.State != model.StateRunning && resource.State != model.StatePaused && resource.State != model.StateStarting {
+		return ""
+	}
+	if at, ok := transitionAt(events, resource.ID, "Started "+resource.Name); ok {
+		return "◷ Started " + format.Ago(at, now) + " from Ryoport."
+	}
+	return ""
+}
 
 func hardwarePhrase(machine *store.Machine) string {
 	if machine == nil {
@@ -188,21 +200,12 @@ func (v *View) layoutOverview(gtx layout.Context, e *env.Env, resource model.Res
 		return v.layoutStoppedOverview(gtx, e, resource, machine)
 	}
 
+	v.net.update(machine, e.Snap.At)
 	left := func(gtx layout.Context) layout.Dimensions {
-		cpu := seriesValues(e.Snap.Series(resource.ID, model.MetricCPU))
-		memory := seriesValues(e.Snap.Series(resource.ID, model.MetricMem))
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(section(e, "CPU over the last 10 minutes", percentReading(cpu), func(gtx layout.Context) layout.Dimensions {
-				return kit.EngravedChart(gtx, e.Th, cpu, 0, 1, 138, []string{"10 min ago", "5 min", "now"})
-			})),
-			layout.Rigid(layout.Spacer{Height: 18}.Layout),
-			layout.Rigid(section(e, "Memory over the last 10 minutes", percentReading(memory), func(gtx layout.Context) layout.Dimensions {
-				return kit.EngravedChart(gtx, e.Th, memory, 0, 1, 112, []string{"10 min ago", "5 min", "now"})
-			})),
-		)
+		return v.layoutReadings(gtx, e, resource, machine)
 	}
 	right := func(gtx layout.Context) layout.Dimensions {
-		return v.layoutReadings(gtx, e, resource, machine)
+		return v.layoutOverviewSharing(gtx, e, resource, machine)
 	}
 	if gtx.Constraints.Max.X < gtx.Dp(660) {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -218,64 +221,108 @@ func (v *View) layoutOverview(gtx layout.Context, e *env.Env, resource model.Res
 }
 
 func (v *View) layoutReadings(gtx layout.Context, e *env.Env, resource model.Resource, machine *store.Machine) layout.Dimensions {
+	cpu := seriesValues(e.Snap.Series(resource.ID, model.MetricCPU))
+	memory := lastValue(e.Snap.Series(resource.ID, model.MetricMem))
+	memoryTotal := sizeBytes(machine.RAM)
+	memoryUsed := int64(float64(memoryTotal) * memory)
 	diskTotal := sizeBytes(machine.Disk)
 	diskFrac := 0.0
 	if diskTotal > 0 {
 		diskFrac = float64(machine.DiskUsed) / float64(diskTotal)
 	}
-	network := lastValue(e.Snap.Series(resource.ID, model.MetricNet))
-	facts := []kit.Fact{
-		{Label: "Guest address", Value: guestIP(machine), Mono: true},
-		{Label: "Guest OS", Value: guestOS(e, machine)},
-		{Label: "Uptime", Value: uptimeValue(machine), Mono: true},
-		{Label: "Display", Value: displayName(machine.Display)},
-	}
+	network := format.Rate(v.net.inbound) + " in, " + format.Rate(v.net.outbound) + " out"
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(section(e, "Disk", format.Bytes(machine.DiskUsed)+" of "+displaySize(machine.Disk), func(gtx layout.Context) layout.Dimensions {
+		layout.Rigid(section(e, "CPU over the last 10 minutes", percentReading(cpu), true, func(gtx layout.Context) layout.Dimensions {
+			return chartWithGrid(gtx, e, cpu)
+		})),
+		layout.Rigid(section(e, "Memory", format.Bytes(memoryUsed)+" of "+displaySize(machine.RAM), false, func(gtx layout.Context) layout.Dimensions {
+			return kit.BladeMeter(gtx, e.Th, memory, e.Th.R.Fg2)
+		})),
+		layout.Rigid(section(e, "Disk", format.Bytes(machine.DiskUsed)+" of "+displaySize(machine.Disk), false, func(gtx layout.Context) layout.Dimensions {
 			return kit.BladeMeter(gtx, e.Th, diskFrac, e.Th.R.Fg2)
 		})),
-		layout.Rigid(layout.Spacer{Height: 18}.Layout),
-		layout.Rigid(section(e, "Network", format.Rate(network), func(gtx layout.Context) layout.Dimensions {
-			return kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, "Combined traffic through this machine")(gtx)
+		layout.Rigid(section(e, "Network", network, false, func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, gtx.Dp(1))}
 		})),
-		layout.Rigid(layout.Spacer{Height: 18}.Layout),
-		layout.Rigid(common.SectionTitle(e.Th, "Machine facts", nil)),
-		layout.Rigid(kit.Facts(e.Th, facts)),
 	)
 }
 
-func (v *View) layoutStoppedOverview(gtx layout.Context, e *env.Env, resource model.Resource, machine *store.Machine) layout.Dimensions {
+func (v *View) layoutStoppedOverview(gtx layout.Context, e *env.Env, resource model.Resource, _ *store.Machine) layout.Dimensions {
 	copy := "Not running, so it holds no memory and draws no power."
 	if at, ok := transitionAt(e.Snap.Events, resource.ID, "Stopped "+resource.Name); ok {
 		copy = "Last used " + format.Ago(at, e.Now) + ". Not running, so it holds no memory and draws no power."
 	}
-	facts := []kit.Fact{
-		{Label: "Processor", Value: machine.Cores + " " + pluralString(machine.Cores, "core", "cores"), Mono: true},
-		{Label: "Memory", Value: displaySize(machine.RAM), Mono: true},
-		{Label: "Disk", Value: displaySize(machine.Disk), Mono: true},
-		{Label: "Display", Value: displayName(machine.Display)},
-		{Label: "Snapshots", Value: strconv.Itoa(len(userSnapshots(machine.Snapshots))), Mono: true},
-	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(kit.Text(e.Th, e.Th.T.Body, e.Th.R.Fg3, copy)),
-		layout.Rigid(layout.Spacer{Height: 34}.Layout),
-		layout.Rigid(common.SectionTitle(e.Th, "Machine facts", nil)),
-		layout.Rigid(kit.Facts(e.Th, facts)),
-	)
+	return kit.Text(e.Th, e.Th.T.Body, e.Th.R.Fg3, copy)(gtx)
 }
 
-func section(e *env.Env, title, reading string, body layout.Widget) layout.Widget {
+func section(e *env.Env, title, reading string, prominent bool, body layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		trailing := layout.Widget(nil)
 		if reading != "" {
-			trailing = kit.Text(e.Th, e.Th.T.Mono, e.Th.R.Fg, reading)
+			style := e.Th.T.Mono
+			if prominent {
+				style = e.Th.T.Sentence
+				style.Face = e.Th.T.Mono.Face
+			}
+			trailing = kit.Text(e.Th, style, e.Th.R.Fg, reading)
 		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(common.SectionTitle(e.Th, title, trailing)),
 			layout.Rigid(body),
-			layout.Rigid(layout.Spacer{Height: 18}.Layout),
+			layout.Rigid(layout.Spacer{Height: 13}.Layout),
 		)
 	}
+}
+
+type networkState struct {
+	at                time.Time
+	rx, tx            uint64
+	inbound, outbound float64
+	initialized       bool
+}
+
+func (n *networkState) reset() { *n = networkState{} }
+
+func (n *networkState) update(machine *store.Machine, at time.Time) {
+	if machine == nil || machine.Stats == nil || machine.Stats.NetRXBytes == nil || machine.Stats.NetTXBytes == nil || at.IsZero() {
+		return
+	}
+	rx, tx := *machine.Stats.NetRXBytes, *machine.Stats.NetTXBytes
+	if !n.initialized {
+		n.at, n.rx, n.tx, n.initialized = at, rx, tx, true
+		return
+	}
+	if !at.After(n.at) || (rx == n.rx && tx == n.tx) {
+		return
+	}
+	if rx < n.rx || tx < n.tx {
+		n.at, n.rx, n.tx = at, rx, tx
+		n.inbound, n.outbound = 0, 0
+		return
+	}
+	seconds := at.Sub(n.at).Seconds()
+	n.inbound = float64(rx-n.rx) / seconds
+	n.outbound = float64(tx-n.tx) / seconds
+	n.at, n.rx, n.tx = at, rx, tx
+}
+
+func chartWithGrid(gtx layout.Context, e *env.Env, values []float64) layout.Dimensions {
+	chart := func(gtx layout.Context) layout.Dimensions {
+		return kit.EngravedChart(gtx, e.Th, values, 0, 1, 138, []string{"10 min ago", "5 min", "now"})
+	}
+	grid := func(gtx layout.Context) layout.Dimensions {
+		size := gtx.Constraints.Min
+		plotHeight := min(size.Y, gtx.Dp(138))
+		dot := max(1, gtx.Dp(1))
+		for row := 1; row <= 3; row++ {
+			y := row * plotHeight / 4
+			for x := 0; x < size.X; x += gtx.Dp(8) {
+				paint.FillShape(gtx.Ops, e.Th.R.Vein, clip.Rect(image.Rect(x, y, min(size.X, x+gtx.Dp(2)), y+dot)).Op())
+			}
+		}
+		return layout.Dimensions{Size: size}
+	}
+	return layout.Stack{}.Layout(gtx, layout.Expanded(grid), layout.Stacked(chart))
 }
 
 func seriesValues(series *model.Series) []float64 {

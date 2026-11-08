@@ -142,7 +142,7 @@ func (a *actState) widgetFor(e *env.Env, resource model.Resource, machine *store
 		}
 	case actStop:
 		return func(gtx layout.Context) layout.Dimensions {
-			return a.stop.Layout(gtx, e.Th, kit.Line, icons.Stop, "Stop")
+			return a.stop.Layout(gtx, e.Th, kit.DangerLine, icons.Stop, "Stop")
 		}
 	case actSnapshots:
 		return func(gtx layout.Context) layout.Dimensions {

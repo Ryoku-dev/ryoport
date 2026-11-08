@@ -36,13 +36,12 @@ func (a *appsTab) Layout(gtx layout.Context, e *env.Env, server *store.Server) l
 	for i, app := range server.Apps {
 		i, app := i, app
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			dims := appLine(gtx, e, app, func(gtx layout.Context) layout.Dimensions {
-				return a.open[i].Layout(gtx, e.Th, kit.Line, icons.OpenInNew, "Open")
-			})
 			if a.open[i].Clicked(gtx) {
 				e.Ops.OpenURL(app.URL)
 			}
-			return dims
+			return appLine(gtx, e, app, func(gtx layout.Context) layout.Dimensions {
+				return a.open[i].Layout(gtx, e.Th, kit.Line, icons.OpenInNew, "Open")
+			})
 		}))
 	}
 	if server.Pve != nil {
@@ -64,13 +63,12 @@ func (a *appsTab) Layout(gtx layout.Context, e *env.Env, server *store.Server) l
 					icon = icons.Stop
 					action = "stop"
 				}
-				dims := guestLine(gtx, e, guest, func(gtx layout.Context) layout.Dimensions {
-					return a.guest[i].Layout(gtx, e.Th, kit.Line, icon, label)
-				})
 				if a.guest[i].Clicked(gtx) {
 					e.Ops.PVEAction(server.Alias, guest.Node, guest.Type, guest.VMID, action)
 				}
-				return dims
+				return guestLine(gtx, e, guest, func(gtx layout.Context) layout.Dimensions {
+					return a.guest[i].Layout(gtx, e.Th, kit.Line, icon, label)
+				})
 			}))
 		}
 	}

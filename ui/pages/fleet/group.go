@@ -116,6 +116,11 @@ func groupResources(resources []model.Resource) []resourceGroup {
 }
 
 func groupOf(resource model.Resource) groupKind {
+	// A server with a failed unit is still up and answering; it reads as
+	// running with an amber word rather than waiting on the person.
+	if resource.State == model.StateDegraded {
+		return groupRunning
+	}
 	switch resource.State.Tone() {
 	case model.ToneAttention, model.ToneBad:
 		return groupNeeds

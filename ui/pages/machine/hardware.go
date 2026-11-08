@@ -114,6 +114,18 @@ func (v *View) layoutHardware(gtx layout.Context, e *env.Env, resource model.Res
 			return v.hardware.secureBoot.Layout(controlGTX(gtx), e.Th, "")
 		})),
 	)
+	facts := []kit.Fact{
+		{Label: "Guest address", Value: guestIP(machine), Mono: true},
+		{Label: "Guest OS", Value: guestOS(e, machine)},
+		{Label: "Uptime", Value: uptimeValue(machine), Mono: true},
+		{Label: "Display", Value: displayName(machine.Display)},
+		{Label: "Snapshots", Value: strconv.Itoa(len(userSnapshots(machine.Snapshots))), Mono: true},
+	}
+	children = append(children,
+		layout.Rigid(layout.Spacer{Height: 21}.Layout),
+		layout.Rigid(common.SectionTitle(e.Th, "Machine facts", nil)),
+		layout.Rigid(kit.Facts(e.Th, facts)),
+	)
 	dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	if editable {
 		v.hardware.apply(gtx, e, resource.Name, beforeTPM, beforeSecure)

@@ -32,7 +32,10 @@ func (t *tunnelsTab) Layout(gtx layout.Context, e *env.Env, server *store.Server
 	for i, tunnel := range server.Tunnels {
 		i, tunnel := i, tunnel
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			dims := layout.Inset{Top: e.Th.Sp.S2, Bottom: e.Th.Sp.S2}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			if t.close[i].Clicked(gtx) {
+				e.Ops.CloseTunnel(tunnel.ID)
+			}
+			return layout.Inset{Top: e.Th.Sp.S2, Bottom: e.Th.Sp.S2}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				opened := "Open"
 				if tunnel.Opened > 0 {
 					opened = "Opened " + format.Ago(time.Unix(tunnel.Opened, 0), e.Now)
@@ -50,10 +53,6 @@ func (t *tunnelsTab) Layout(gtx layout.Context, e *env.Env, server *store.Server
 					}),
 				)
 			})
-			if t.close[i].Clicked(gtx) {
-				e.Ops.CloseTunnel(tunnel.ID)
-			}
-			return dims
 		}))
 	}
 
@@ -61,6 +60,11 @@ func (t *tunnelsTab) Layout(gtx layout.Context, e *env.Env, server *store.Server
 	errText := ""
 	if value != "" {
 		errText = validateTunnelSpec(value)
+	}
+	if value != "" && errText == "" && t.open.Clicked(gtx) {
+		e.Ops.OpenTunnel(server.Alias, value)
+		t.spec.SetText("")
+		value = ""
 	}
 	children = append(children,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -74,7 +78,7 @@ func (t *tunnelsTab) Layout(gtx layout.Context, e *env.Env, server *store.Server
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: e.Th.Sp.S2}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				dims := layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if value == "" || errText != "" {
 							gtx = gtx.Disabled()
@@ -82,11 +86,6 @@ func (t *tunnelsTab) Layout(gtx layout.Context, e *env.Env, server *store.Server
 						return t.open.Layout(gtx, e.Th, kit.Gold, icons.Link, "Open")
 					}),
 				)
-				if value != "" && errText == "" && t.open.Clicked(gtx) {
-					e.Ops.OpenTunnel(server.Alias, value)
-					t.spec.SetText("")
-				}
-				return dims
 			})
 		}),
 	)

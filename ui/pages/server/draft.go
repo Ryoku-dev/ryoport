@@ -148,18 +148,6 @@ func (d *Draft) initialize(e *env.Env) {
 }
 
 func (d *Draft) layoutActions(gtx layout.Context, e *env.Env, errors validationErrors) layout.Dimensions {
-	dims := layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			saveGTX := gtx
-			if errors.Any() {
-				saveGTX = gtx.Disabled()
-			}
-			return d.save.Layout(saveGTX, e.Th, kit.Gold, icons.Save, "Save")
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return d.cancel.Layout(gtx, e.Th, kit.Line, icons.Close, "Cancel")
-		}),
-	)
 	if !errors.Any() && d.save.Clicked(gtx) {
 		input := d.hostInput()
 		previous := ""
@@ -174,7 +162,18 @@ func (d *Draft) layoutActions(gtx layout.Context, e *env.Env, errors validationE
 		e.Nav.CloseDraft()
 		d.initialized = false
 	}
-	return dims
+	return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			saveGTX := gtx
+			if errors.Any() {
+				saveGTX = gtx.Disabled()
+			}
+			return d.save.Layout(saveGTX, e.Th, kit.Gold, icons.Save, "Save")
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return d.cancel.Layout(gtx, e.Th, kit.Line, icons.Close, "Cancel")
+		}),
+	)
 }
 
 func (d *Draft) layoutForm(gtx layout.Context, e *env.Env, errors validationErrors) layout.Dimensions {
@@ -217,21 +216,20 @@ func (d *Draft) layoutForm(gtx layout.Context, e *env.Env, errors validationErro
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: e.Th.Sp.S4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				if d.advancedOpen.Clicked(gtx) {
+					d.advanced = !d.advanced
+				}
 				label := "Advanced"
 				icon := icons.ExpandMore
 				if d.advanced {
 					label = "Hide advanced"
 					icon = icons.ExpandLess
 				}
-				dims := layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						return d.advancedOpen.Layout(gtx, e.Th, kit.Quiet, icon, label)
 					}),
 				)
-				if d.advancedOpen.Clicked(gtx) {
-					d.advanced = !d.advanced
-				}
-				return dims
 			})
 		}),
 	}

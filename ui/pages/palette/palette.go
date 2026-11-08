@@ -29,8 +29,8 @@ const maxVisibleResults = 6
 type Palette struct {
 	search   kit.Search
 	list     kit.List
-	scrim    widget.Clickable
-	clicks   map[string]*widget.Clickable
+	scrim    kit.Click
+	clicks   map[string]*kit.Click
 	selected int
 	query    string
 }
@@ -47,7 +47,7 @@ type entry struct {
 }
 
 func New() *Palette {
-	return &Palette{clicks: make(map[string]*widget.Clickable)}
+	return &Palette{clicks: make(map[string]*kit.Click)}
 }
 
 func (p *Palette) Open(gtx layout.Context) {
@@ -209,7 +209,7 @@ func (p *Palette) resultRow(gtx layout.Context, e *env.Env, item entry, selected
 	gtx.Constraints.Min.Y = height
 	gtx.Constraints.Max.Y = height
 	click := p.clicks[item.key]
-	return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	dims := click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
 		semantic.LabelOp(item.label).Add(gtx.Ops)
 		semantic.DescriptionOp(item.detail).Add(gtx.Ops)
@@ -256,6 +256,10 @@ func (p *Palette) resultRow(gtx layout.Context, e *env.Env, item entry, selected
 		call.Add(gtx.Ops)
 		return dims
 	})
+	if click.Clicked(gtx) {
+		p.execute(e, item)
+	}
+	return dims
 }
 
 func (p *Palette) empty(gtx layout.Context, e *env.Env) layout.Dimensions {
@@ -278,7 +282,7 @@ func (p *Palette) execute(e *env.Env, item entry) {
 func (p *Palette) prepareClicks(entries []entry) {
 	for _, item := range entries {
 		if p.clicks[item.key] == nil {
-			p.clicks[item.key] = new(widget.Clickable)
+			p.clicks[item.key] = new(kit.Click)
 		}
 	}
 	if len(p.clicks) <= len(entries)+32 {

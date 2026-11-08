@@ -28,18 +28,27 @@ func StateWords(e *env.Env, r model.Resource) (claim, proof string) {
 				return "Online", format.Latency(server.Reach.RTTMs)
 			}
 			return "Online", ""
-		case model.StateNeedsAuth, model.StateDegraded:
+		case model.StateNeedsAuth:
 			return "Needs you", format.Ago(r.Updated, e.Now)
+		case model.StateDegraded:
+			failed := 0
+			if server != nil && server.Probe != nil {
+				failed = server.Probe.FailedUnits
+			}
+			proof := ""
+			if server != nil && server.Reach != nil {
+				proof = format.Latency(server.Reach.RTTMs)
+			}
+			if failed == 1 {
+				return "1 failed unit", proof
+			}
+			return strconv.Itoa(failed) + " failed units", proof
 		default:
 			return "Offline", ""
 		}
 	case model.KindMachine:
-		if job, ok := s.JobFor(r.ID); ok {
-			claim = r.State.Label()
-			if job.Progress >= 0 {
-				claim = format.Percent(job.Progress)
-			}
-			return claim, jobTimeLeft(job, e.Now)
+		if _, claim, proof, _, _, ok := BecomingWords(e, r); ok {
+			return claim, proof
 		}
 		switch r.State {
 		case model.StateRunning:
@@ -75,12 +84,54 @@ func StateWords(e *env.Env, r model.Resource) (claim, proof string) {
 	}
 }
 
+// BecomingWords returns the live row copy and progress for a machine job.
+// Indeterminate is true only when the job has no byte total.
+func BecomingWords(e *env.Env, r model.Resource) (facts, claim, proof string, progress float64, indeterminate, ok bool) {
+	progress = -1
+	if e == nil || e.Snap == nil || r.Kind != model.KindMachine {
+		return "", "", "", progress, false, false
+	}
+	job, ok := e.Snap.JobFor(r.ID)
+	if !ok {
+		return "", "", "", progress, false, false
+	}
+
+	claim = r.State.Label()
+	indeterminate = job.Total <= 0
+	if !indeterminate {
+		progress = job.Progress
+		if progress < 0 && job.Total > 0 {
+			progress = float64(job.Done) / float64(job.Total)
+		}
+		if progress >= 0 {
+			claim += " " + format.Percent(progress)
+		}
+	} else if job.Progress >= 0 {
+		claim += " " + format.Percent(job.Progress)
+	}
+
+	if job.Total > 0 {
+		facts = format.Progress(job.Done, job.Total)
+		if left := jobTimeLeft(job, e.Now); left != "" {
+			facts += ", " + left
+		}
+	} else if job.Phase != "" {
+		facts = job.Phase
+	} else {
+		facts = r.Detail
+	}
+	if job.Rate > 0 {
+		proof = format.Rate(job.Rate)
+	}
+	return facts, claim, proof, progress, indeterminate, true
+}
+
 func jobTimeLeft(job model.Job, now time.Time) string {
 	var left time.Duration
-	if job.Rate > 0 && job.Total > job.Done {
-		left = time.Duration(float64(time.Second) * float64(job.Total-job.Done) / job.Rate)
-	} else if job.Progress > 0 && job.Progress < 1 && !job.Started.IsZero() && now.After(job.Started) {
+	if job.Progress > 0 && job.Progress < 1 && !job.Started.IsZero() && now.After(job.Started) {
 		left = time.Duration(float64(now.Sub(job.Started)) * (1 - job.Progress) / job.Progress)
+	} else if job.Rate > 0 && job.Total > job.Done {
+		left = time.Duration(float64(time.Second) * float64(job.Total-job.Done) / job.Rate)
 	}
 	if left <= 0 {
 		return ""
@@ -124,7 +175,7 @@ func FleetSentence(s *store.Snapshot) (spans []Span, attention int) {
 				running++
 			}
 		case model.KindServer, model.KindConsole:
-			if r.State == model.StateOnline {
+			if r.State == model.StateOnline || r.State == model.StateDegraded {
 				running++
 			}
 		}
@@ -157,7 +208,7 @@ func attentionName(s *store.Snapshot) string {
 		}
 	}
 	for _, r := range s.Resources {
-		if r.State.Tone() == model.ToneAttention || r.State.Tone() == model.ToneBad {
+		if r.State == model.StateNeedsAuth || r.State.Tone() == model.ToneBad {
 			return r.Name
 		}
 	}

@@ -12,7 +12,6 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
-	"gioui.org/widget"
 
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/ui/anim"
@@ -60,7 +59,7 @@ func (v *View) layoutMap(gtx layout.Context, e *env.Env, reveal float32) layout.
 		point := resolveNodePoint(gtx, motion, nodePlacement.Point, node.Tone)
 		click := v.nodeClicks[node.ID]
 		if click == nil {
-			click = new(widget.Clickable)
+			click = new(kit.Click)
 			v.nodeClicks[node.ID] = click
 		}
 		if click.Clicked(gtx) {
@@ -232,7 +231,7 @@ func drawSameBox(gtx layout.Context, e *env.Env, placed []nodePlacement, groups 
 	}
 }
 
-func drawMapNode(gtx layout.Context, e *env.Env, node mapNode, placement nodePlacement, point image.Point, click *widget.Clickable) {
+func drawMapNode(gtx layout.Context, e *env.Env, node mapNode, placement nodePlacement, point image.Point, click *kit.Click) {
 	halo := e.Th.R.Vein
 	if click.Hovered() {
 		halo = e.Th.R.Fg2

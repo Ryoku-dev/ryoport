@@ -1,13 +1,17 @@
 package fleet
 
 import (
+	"image"
 	"strconv"
 
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/layout"
+	"gioui.org/op/clip"
 
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/store"
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/env"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/kit"
@@ -56,6 +60,7 @@ type View struct {
 	query     string
 	counts    [4]int
 	rev       uint64
+	keyTag    struct{}
 }
 
 func New() *View {
@@ -83,7 +88,7 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	focusSearch := e.Nav.TakeFocusSearch()
 	v.counts = fleetCounts(e.Snap.Resources)
 
-	return layout.Inset{Top: e.Th.Sp.S4, Right: e.Th.Sp.S3, Bottom: e.Th.Sp.S3, Left: e.Th.Sp.S3}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Top: 16, Right: e.Th.Sp.S3, Bottom: e.Th.Sp.S3, Left: e.Th.Sp.S3}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return v.layoutTools(gtx, e, focusSearch)
@@ -131,6 +136,7 @@ func (v *View) handleEvents(gtx layout.Context, e *env.Env) {
 		}
 		if clicked {
 			v.cursor = resource.ID
+			gtx.Execute(key.FocusCmd{Tag: &v.keyTag})
 			e.Nav.Select(resource.ID)
 		}
 		if double {
@@ -142,11 +148,11 @@ func (v *View) handleEvents(gtx layout.Context, e *env.Env) {
 
 func (v *View) handleKeys(gtx layout.Context, e *env.Env) {
 	filters := []key.Filter{
-		{Name: key.NameUpArrow},
-		{Name: key.NameDownArrow},
-		{Name: key.NameReturn, Optional: key.ModCtrl | key.ModCommand},
-		{Name: key.NameEnter, Optional: key.ModCtrl | key.ModCommand},
-		{Name: key.Name("/")},
+		{Focus: &v.keyTag, Name: key.NameUpArrow},
+		{Focus: &v.keyTag, Name: key.NameDownArrow},
+		{Focus: &v.keyTag, Name: key.NameReturn, Optional: key.ModCtrl | key.ModCommand},
+		{Focus: &v.keyTag, Name: key.NameEnter, Optional: key.ModCtrl | key.ModCommand},
+		{Focus: &v.keyTag, Name: key.Name("/")},
 	}
 	for {
 		event, ok := gtx.Event(filters[0], filters[1], filters[2], filters[3], filters[4])
@@ -211,7 +217,7 @@ func (v *View) revealCursor() {
 func (v *View) activate(e *env.Env, resource model.Resource) {
 	if resource.Primary == model.VerbSetPass || resource.Kind == model.KindServer && resource.State == model.StateNeedsAuth {
 		v.cursor = resource.ID
-		e.Nav.Select(resource.ID)
+		e.Nav.AskPassword(resource.ID)
 		return
 	}
 	if e.Ops != nil {
@@ -220,7 +226,13 @@ func (v *View) activate(e *env.Env, resource model.Resource) {
 }
 
 func (v *View) layoutTools(gtx layout.Context, e *env.Env, focusSearch bool) layout.Dimensions {
-	return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, "Fleet")),
+		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S1}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return v.layoutSentence(gtx, e)
+		}),
+		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if focusSearch {
 				v.search.Focus(gtx)
@@ -232,9 +244,7 @@ func (v *View) layoutTools(gtx layout.Context, e *env.Env, focusSearch bool) lay
 			}
 			return dims
 		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return v.layoutSentence(gtx, e)
-		}),
+		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S2}.Layout),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return v.layoutFilters(gtx, e)
 		}),
@@ -243,12 +253,25 @@ func (v *View) layoutTools(gtx layout.Context, e *env.Env, focusSearch bool) lay
 
 func (v *View) layoutSentence(gtx layout.Context, e *env.Env) layout.Dimensions {
 	spans, attention := common.FleetSentence(e.Snap)
-	if attention >= 0 && attention < len(spans) {
-		spans[attention].Color = e.Th.R.Amber
+	children := make([]layout.FlexChild, 0, len(spans))
+	for i, span := range spans {
+		span := span
+		if i == attention {
+			span.Color = e.Th.R.Amber
+		}
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			style := e.Th.T.Label
+			if span.Mono {
+				style = e.Th.T.MonoSm
+			}
+			ink := e.Th.R.Fg2
+			if span.Color.A != 0 {
+				ink = span.Color
+			}
+			return kit.Label{Style: style, Color: ink, MaxLines: 1}.Layout(gtx, e.Th, span.Text)
+		}))
 	}
-	return layout.Inset{Left: e.Th.Sp.S1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return common.Sentence(gtx, e.Th, e.Th.T.Label, e.Th.R.Fg2, spans)
-	})
+	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline}.Layout(gtx, children...)
 }
 
 func (v *View) layoutFilters(gtx layout.Context, e *env.Env) layout.Dimensions {
@@ -285,6 +308,7 @@ func (v *View) layoutFilters(gtx layout.Context, e *env.Env) layout.Dimensions {
 }
 
 func (v *View) layoutFleet(gtx layout.Context, e *env.Env) layout.Dimensions {
+	event.Op(gtx.Ops, &v.keyTag)
 	if !e.Snap.Loaded[store.SourceMachines] && !e.Snap.Loaded[store.SourceServers] {
 		v.visible = v.visible[:0]
 		v.entries = v.entries[:0]
@@ -341,15 +365,27 @@ func (v *View) layoutEntry(gtx layout.Context, e *env.Env, entry listEntry) layo
 	resource := entry.resource
 	state := v.rowStates[resource.ID]
 	selected := e.Nav.Shows(resource.ID)
-	focused := resource.ID == v.cursor
+	focused := resource.ID == v.cursor && gtx.Focused(&v.keyTag)
 	ink := e.Th.R.Fg2
 	if selected {
 		ink = e.Th.R.OnSel
 	}
+	facts := resource.Detail
 	claim, proof := common.StateWords(e, resource)
 	progress := -1.0
-	if job, ok := e.Snap.JobFor(resource.ID); ok && job.Progress >= 0 {
-		progress = job.Progress
+	indeterminate := false
+	if jobFacts, jobClaim, jobProof, jobProgress, unknown, ok := common.BecomingWords(e, resource); ok {
+		facts, claim, proof = jobFacts, jobClaim, jobProof
+		progress, indeterminate = jobProgress, unknown
+	}
+	marks, _ := common.ResourceMarks(resource)
+	var factsWidget layout.Widget
+	if len(marks) > 0 {
+		factsInk := e.Th.R.Fg3
+		if selected {
+			factsInk = e.Th.R.OnSel2
+		}
+		factsWidget = common.ResourceFactsWidget(e.Th, facts, resource.Kind == model.KindServer || resource.Kind == model.KindConsole, resource, factsInk)
 	}
 	label, icon := common.PrimaryLabel(resource)
 	var action layout.Widget
@@ -359,17 +395,36 @@ func (v *View) layoutEntry(gtx layout.Context, e *env.Env, entry listEntry) layo
 			return state.action.Layout(gtx, e.Th, kit.Gold, icon, label)
 		}
 	}
-	return state.row.Layout(gtx, e.Th, kit.RowContent{
-		Mark:      common.Mark(e, resource, 32, ink),
-		Title:     resource.Name,
-		Facts:     resource.Detail,
-		FactsMono: resource.Kind == model.KindServer || resource.Kind == model.KindConsole,
-		Claim:     claim,
-		Proof:     proof,
-		Tone:      resource.State.Tone(),
-		Progress:  progress,
-		Action:    action,
+	dims := state.row.Layout(gtx, e.Th, kit.RowContent{
+		Mark:        common.Mark(e, resource, 32, ink),
+		Title:       resource.Name,
+		Facts:       facts,
+		FactsMono:   resource.Kind == model.KindServer || resource.Kind == model.KindConsole,
+		FactsWidget: factsWidget,
+		Claim:       claim,
+		Proof:       proof,
+		Tone:        resource.State.Tone(),
+		Progress:    progress,
+		Action:      action,
 	}, selected, focused)
+	if indeterminate {
+		v.layoutIndeterminateBlade(gtx, e, dims.Size)
+	}
+	return dims
+}
+
+func (v *View) layoutIndeterminateBlade(gtx layout.Context, e *env.Env, size image.Point) {
+	height := max(1, gtx.Dp(2))
+	segment := max(1, size.X/4)
+	start := 0
+	if !anim.Reduced() {
+		phase := anim.Phase(gtx, 4*e.Th.Motion.Field)
+		start = int(float32(size.X+segment)*phase) - segment
+	}
+	track := image.Rect(0, size.Y-height, size.X, size.Y)
+	stack := clip.Rect(track).Push(gtx.Ops)
+	kit.Blade(gtx.Ops, image.Rect(start, track.Min.Y, start+segment, track.Max.Y), e.Th.R.Lapis)
+	stack.Pop()
 }
 
 func filterIndex(filter env.Filter) int {

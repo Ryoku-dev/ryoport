@@ -30,7 +30,7 @@ type View struct {
 	attentionList kit.List
 	alertButtons  map[string]*kit.Button
 	jobButtons    map[string]*kit.Button
-	nodeClicks    map[model.ID]*widget.Clickable
+	nodeClicks    map[model.ID]*kit.Click
 	nodeMotion    map[model.ID]*pointMotion
 }
 
@@ -50,7 +50,7 @@ func New() *View {
 		rings:        anim.Tween{Duration: 1200 * time.Millisecond, Ease: anim.EaseChisel},
 		alertButtons: make(map[string]*kit.Button),
 		jobButtons:   make(map[string]*kit.Button),
-		nodeClicks:   make(map[model.ID]*widget.Clickable),
+		nodeClicks:   make(map[model.ID]*kit.Click),
 		nodeMotion:   make(map[model.ID]*pointMotion),
 	}
 }

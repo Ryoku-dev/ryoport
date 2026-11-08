@@ -65,8 +65,8 @@ func TestStateWords(t *testing.T) {
 			name:      "machine job",
 			resource:  model.Resource{ID: model.NewID(model.KindMachine, "debian"), Kind: model.KindMachine, State: model.StateCreating},
 			snapshot:  &store.Snapshot{Jobs: []model.Job{{Target: model.NewID(model.KindMachine, "debian"), State: model.JobRunning, Progress: 0.25, Done: 60, Total: 240, Rate: 1}}},
-			wantClaim: "25%",
-			wantProof: "about 3 min left",
+			wantClaim: "Creating 25%",
+			wantProof: "1 B/s",
 		},
 		{
 			name:      "ready console",
@@ -86,6 +86,69 @@ func TestStateWords(t *testing.T) {
 			gotClaim, gotProof := StateWords(&env.Env{Snap: test.snapshot, Now: now}, test.resource)
 			if gotClaim != test.wantClaim || gotProof != test.wantProof {
 				t.Fatalf("StateWords() = (%q, %q), want (%q, %q)", gotClaim, gotProof, test.wantClaim, test.wantProof)
+			}
+		})
+	}
+}
+
+func TestBecomingWords(t *testing.T) {
+	now := time.Date(2026, time.November, 8, 12, 0, 0, 0, time.UTC)
+	id := model.NewID(model.KindMachine, "fedora")
+	const gib = int64(1024 * 1024 * 1024)
+	resource := model.Resource{ID: id, Kind: model.KindMachine, State: model.StateCreating, Detail: "Downloading"}
+	snapshot := &store.Snapshot{Jobs: []model.Job{{
+		Target:   id,
+		State:    model.JobRunning,
+		Progress: 0.62,
+		Done:     14 * gib / 10,
+		Total:    23 * gib / 10,
+		Rate:     12 * 1024 * 1024,
+		Started:  now.Add(-5 * time.Minute),
+	}}}
+
+	facts, claim, proof, progress, indeterminate, ok := BecomingWords(&env.Env{Snap: snapshot, Now: now}, resource)
+	if !ok {
+		t.Fatal("BecomingWords() did not find the running job")
+	}
+	if claim != "Creating 62%" {
+		t.Fatalf("claim = %q, want %q", claim, "Creating 62%")
+	}
+	if facts != "1.4 of 2.3 GB, about 3 min left" {
+		t.Fatalf("facts = %q, want %q", facts, "1.4 of 2.3 GB, about 3 min left")
+	}
+	if proof != "12 MB/s" {
+		t.Fatalf("proof = %q, want %q", proof, "12 MB/s")
+	}
+	if progress != 0.62 || indeterminate {
+		t.Fatalf("progress = %v, indeterminate = %v", progress, indeterminate)
+	}
+}
+
+func TestResourceMarks(t *testing.T) {
+	tests := []struct {
+		name          string
+		resource      model.Resource
+		want          string
+		wantAttention int
+	}{
+		{name: "none", resource: model.Resource{}, wantAttention: -1},
+		{name: "instant", resource: model.Resource{Instant: true}, want: "Instant", wantAttention: -1},
+		{name: "disposable", resource: model.Resource{Disposable: true}, want: "Disposable", wantAttention: 0},
+		{
+			name:          "all",
+			resource:      model.Resource{Instant: true, Disposable: true, Sealed: true},
+			want:          "Disposable · Instant · Sealed",
+			wantAttention: 0,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			spans, attention := ResourceMarks(test.resource)
+			if got := spanText(spans); got != test.want {
+				t.Fatalf("ResourceMarks() text = %q, want %q", got, test.want)
+			}
+			if attention != test.wantAttention {
+				t.Fatalf("ResourceMarks() attention = %d, want %d", attention, test.wantAttention)
 			}
 		})
 	}

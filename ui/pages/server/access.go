@@ -38,6 +38,19 @@ func (a *accessTab) Layout(gtx layout.Context, e *env.Env, server *store.Server)
 		{Label: "Authentication", Value: auth},
 		{Label: "Last reachable", Value: lastReachable},
 	}
+	if e.Snap.Host.Keyring {
+		if a.set.Clicked(gtx) {
+			password := a.password.Text()
+			if strings.TrimSpace(password) != "" {
+				e.Ops.SetPassword(server.Alias, password)
+				a.password.SetText("")
+			}
+		}
+		if a.clear.Clicked(gtx) {
+			e.Ops.ClearPassword(server.Alias)
+			a.password.SetText("")
+		}
+	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(common.SectionTitle(e.Th, "What Ryoport knows", nil)),
 		layout.Rigid(kit.Facts(e.Th, facts)),
@@ -64,7 +77,7 @@ func (a *accessTab) Layout(gtx layout.Context, e *env.Env, server *store.Server)
 			if !e.Snap.Host.Keyring {
 				return layout.Dimensions{}
 			}
-			dims := layout.Inset{Top: e.Th.Sp.S2}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: e.Th.Sp.S2}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						setGTX := gtx
@@ -78,18 +91,6 @@ func (a *accessTab) Layout(gtx layout.Context, e *env.Env, server *store.Server)
 					}),
 				)
 			})
-			if a.set.Clicked(gtx) {
-				password := a.password.Text()
-				if strings.TrimSpace(password) != "" {
-					e.Ops.SetPassword(server.Alias, password)
-					a.password.SetText("")
-				}
-			}
-			if a.clear.Clicked(gtx) {
-				e.Ops.ClearPassword(server.Alias)
-				a.password.SetText("")
-			}
-			return dims
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: e.Th.Sp.S5}.Layout(gtx, common.SectionTitle(e.Th, "SSH keys", nil))
@@ -118,14 +119,13 @@ func (a *accessTab) layoutKeys(gtx layout.Context, e *env.Env, alias string) lay
 	for i, key := range e.Snap.Keys.Files {
 		i, key := i, key
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			button := func(gtx layout.Context) layout.Dimensions {
-				return a.deploy[i].Layout(gtx, e.Th, kit.Line, icons.Upload, "Deploy")
-			}
-			dims := keyLine(gtx, e, key.Path, key.Fingerprint, button)
 			if a.deploy[i].Clicked(gtx) {
 				e.Ops.DeployKey(alias, key.Path)
 			}
-			return dims
+			button := func(gtx layout.Context) layout.Dimensions {
+				return a.deploy[i].Layout(gtx, e.Th, kit.Line, icons.Upload, "Deploy")
+			}
+			return keyLine(gtx, e, key.Path, key.Fingerprint, button)
 		}))
 	}
 	if len(e.Snap.Keys.Agent) == 0 && len(e.Snap.Keys.Files) == 0 {
@@ -133,7 +133,14 @@ func (a *accessTab) layoutKeys(gtx layout.Context, e *env.Env, alias string) lay
 	}
 	children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 		return layout.Inset{Top: e.Th.Sp.S4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.End, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
+			if a.makeKey.Clicked(gtx) {
+				name := strings.TrimSpace(a.keyName.Text())
+				if name == "" {
+					name = "ryoport"
+				}
+				e.Ops.Keygen(name, "ed25519")
+			}
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
 				layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 					return cappedField(gtx, func(gtx layout.Context) layout.Dimensions {
 						return a.keyName.Layout(gtx, e.Th, "New key name", "ryoport", "Makes an Ed25519 key in your SSH folder.", "")
@@ -143,14 +150,6 @@ func (a *accessTab) layoutKeys(gtx layout.Context, e *env.Env, alias string) lay
 					return a.makeKey.Layout(gtx, e.Th, kit.Gold, icons.Key, "Make a key")
 				}),
 			)
-			if a.makeKey.Clicked(gtx) {
-				name := strings.TrimSpace(a.keyName.Text())
-				if name == "" {
-					name = "ryoport"
-				}
-				e.Ops.Keygen(name, "ed25519")
-			}
-			return dims
 		})
 	}))
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)

@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 
+	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -21,9 +22,22 @@ import (
 
 const repositoryURL = "https://github.com/ryoku-dev/ryoport"
 
+var settingsSections = [...]string{
+	"Appearance",
+	"New machines",
+	"VM engine",
+	"GPU passthrough",
+	"SSH keys",
+	"Updates",
+	"About",
+}
+
 // View is the full Settings page.
 type View struct {
-	list kit.List
+	list         kit.List
+	sectionStrip layout.List
+	sectionLinks [7]kit.Click
+	sectionChips [7]kit.Button
 
 	initialized      bool
 	catalogRequested bool
@@ -60,6 +74,7 @@ type View struct {
 func New() *View {
 	view := &View{tools: make(map[string]*kit.Toggle)}
 	view.list.Axis = layout.Vertical
+	view.sectionStrip.Axis = layout.Horizontal
 	return view
 }
 
@@ -80,51 +95,186 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 		v.savePackages.Busy = false
 	}
 	v.handleButtons(gtx, e)
+	current := v.handleSectionNavigation(gtx, e.Class)
 	paint.FillShape(gtx.Ops, e.Th.R.Stone2, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	return layout.Inset{Top: 34, Bottom: 34, Left: 36, Right: 36}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		width := min(gtx.Constraints.Max.X, gtx.Dp(760))
-		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+		switch e.Class {
+		case env.Expanded:
+			return v.layoutExpanded(gtx, e, current)
+		case env.Medium:
+			return v.layoutMedium(gtx, e, current)
+		default:
+			return v.layoutCompact(gtx, e)
+		}
+	})
+}
+
+func (v *View) handleSectionNavigation(gtx layout.Context, class env.Class) int {
+	current := min(max(v.list.Position.First, 0), len(settingsSections)-1)
+	switch class {
+	case env.Expanded:
+		for index := range settingsSections {
+			if v.sectionLinks[index].Clicked(gtx) {
+				v.list.ScrollTo(index)
+				current = index
+			}
+		}
+	case env.Medium:
+		for index := range settingsSections {
+			if v.sectionChips[index].Clicked(gtx) {
+				v.list.ScrollTo(index)
+				current = index
+			}
+		}
+	}
+	return current
+}
+
+func (v *View) layoutCompact(gtx layout.Context, e *env.Env) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Bottom: 21}.Layout(gtx, kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, "Settings"))
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			return v.layoutList(gtx, e)
+		}),
+	)
+}
+
+func (v *View) layoutMedium(gtx layout.Context, e *env.Env, current int) layout.Dimensions {
+	width := min(gtx.Constraints.Max.X, gtx.Dp(760))
+	return centeredPane(gtx, width, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints.Min.X = width
-				gtx.Constraints.Max.X = width
+				return layout.Inset{Bottom: 13}.Layout(gtx, kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, "Settings"))
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return v.layoutSectionStrip(gtx, e, current)
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return v.layoutList(gtx, e)
 			}),
-			layout.Flexed(1, layout.Spacer{}.Layout),
 		)
 	})
 }
 
+func (v *View) layoutExpanded(gtx layout.Context, e *env.Env, current int) layout.Dimensions {
+	width := min(gtx.Constraints.Max.X, gtx.Dp(994))
+	return centeredPane(gtx, width, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Bottom: 21}.Layout(gtx, kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, "Settings"))
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, gtx.Dp(200))
+						gtx.Constraints.Max.X = gtx.Constraints.Min.X
+						return layout.N.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return v.layoutSectionIndex(gtx, e, current)
+						})
+					}),
+					layout.Rigid(layout.Spacer{Width: 34}.Layout),
+					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+						return v.layoutList(gtx, e)
+					}),
+				)
+			}),
+		)
+	})
+}
+
+func (v *View) layoutSectionStrip(gtx layout.Context, e *env.Env, current int) layout.Dimensions {
+	return layout.Inset{Bottom: 21}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return v.sectionStrip.Layout(gtx, len(settingsSections), func(gtx layout.Context, index int) layout.Dimensions {
+			return layout.Inset{Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				button := &v.sectionChips[index]
+				button.Small = true
+				kind := kit.Quiet
+				if index == current {
+					kind = kit.On
+				}
+				return button.Layout(gtx, e.Th, kind, nil, settingsSections[index])
+			})
+		})
+	})
+}
+
+func (v *View) layoutSectionIndex(gtx layout.Context, e *env.Env, current int) layout.Dimensions {
+	return layout.Inset{Top: 1, Right: 1, Bottom: 1, Left: 1}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return column(gtx, len(settingsSections), 4, func(gtx layout.Context, index int) layout.Dimensions {
+			link := &v.sectionLinks[index]
+			return link.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				size := image.Pt(gtx.Constraints.Max.X, gtx.Dp(48))
+				ink := e.Th.R.Fg2
+				if index == current {
+					kit.FillCut(gtx.Ops, image.Rectangle{Max: size}, gtx.Dp(e.Th.Cut.Mid), e.Th.R.Sel)
+					ink = e.Th.R.OnSel
+				} else if link.Hovered() {
+					kit.FillCut(gtx.Ops, image.Rectangle{Max: size}, gtx.Dp(e.Th.Cut.Mid), e.Th.R.Stone3)
+				}
+				semantic.Button.Add(gtx.Ops)
+				semantic.LabelOp(settingsSections[index]).Add(gtx.Ops)
+				semantic.SelectedOp(index == current).Add(gtx.Ops)
+
+				labelGTX := gtx
+				labelGTX.Constraints.Min = image.Point{}
+				labelGTX.Constraints.Max = image.Pt(max(0, size.X-gtx.Dp(26)), size.Y)
+				macro := op.Record(gtx.Ops)
+				labelDims := kit.Text(e.Th, e.Th.T.Row, ink, settingsSections[index])(labelGTX)
+				labelCall := macro.Stop()
+				x := gtx.Dp(13)
+				y := max(0, (size.Y-labelDims.Size.Y)/2)
+				offset := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
+				labelCall.Add(gtx.Ops)
+				offset.Pop()
+				return layout.Dimensions{Size: size, Baseline: y + labelDims.Baseline}
+			})
+		})
+	})
+}
+
+func centeredPane(gtx layout.Context, width int, body layout.Widget) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+		layout.Flexed(1, layout.Spacer{}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X = width
+			gtx.Constraints.Max.X = width
+			return body(gtx)
+		}),
+		layout.Flexed(1, layout.Spacer{}.Layout),
+	)
+}
+
 func (v *View) layoutList(gtx layout.Context, e *env.Env) layout.Dimensions {
-	return v.list.Layout(gtx, e.Th, 8, func(gtx layout.Context, index int) layout.Dimensions {
+	return v.list.Layout(gtx, e.Th, len(settingsSections), func(gtx layout.Context, index int) layout.Dimensions {
 		switch index {
 		case 0:
-			return layout.Inset{Bottom: 21}.Layout(gtx, kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, "Settings"))
-		case 1:
-			return settingsSection(gtx, e.Th, "Appearance", func(gtx layout.Context) layout.Dimensions {
+			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
 				return v.layoutAppearance(gtx, e)
 			})
-		case 2:
-			return settingsSection(gtx, e.Th, "New machines", func(gtx layout.Context) layout.Dimensions {
+		case 1:
+			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
 				return v.layoutDefaults(gtx, e)
 			})
-		case 3:
-			return settingsSection(gtx, e.Th, "VM engine", func(gtx layout.Context) layout.Dimensions {
+		case 2:
+			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
 				return v.layoutEngine(gtx, e)
 			})
-		case 4:
-			return settingsSection(gtx, e.Th, "GPU passthrough", func(gtx layout.Context) layout.Dimensions {
+		case 3:
+			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
 				return v.layoutGPU(gtx, e)
 			})
-		case 5:
-			return settingsSection(gtx, e.Th, "SSH keys", func(gtx layout.Context) layout.Dimensions {
+		case 4:
+			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
 				return v.layoutKeys(gtx, e)
 			})
-		case 6:
-			return settingsSection(gtx, e.Th, "Updates", func(gtx layout.Context) layout.Dimensions {
+		case 5:
+			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
 				return v.layoutUpdates(gtx, e)
 			})
-		case 7:
-			return settingsSection(gtx, e.Th, "About", func(gtx layout.Context) layout.Dimensions {
+		case 6:
+			return settingsSection(gtx, e.Th, settingsSections[index], func(gtx layout.Context) layout.Dimensions {
 				return v.layoutAbout(gtx, e)
 			})
 		default:

@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 	"gioui.org/widget"
 
 	"github.com/ryoku-dev/ryoport/internal/model"
@@ -31,6 +33,9 @@ const (
 	itemDay
 	itemEvent
 	itemEmpty
+	itemWideJobs
+	itemWideStatus
+	itemWideHistory
 )
 
 type activityItem struct {
@@ -42,6 +47,7 @@ type activityItem struct {
 // View is the full Activity page.
 type View struct {
 	list         kit.List
+	wideList     kit.List
 	picker       kit.Picker
 	filter       model.ID
 	filterIDs    []model.ID
@@ -58,6 +64,7 @@ type View struct {
 	dataRev      uint64
 	dataFilter   model.ID
 	dataDay      int
+	historyStart int
 	dataBuilt    bool
 }
 
@@ -67,6 +74,7 @@ func New() *View {
 		fixButtons: make(map[string]*kit.Button),
 	}
 	view.list.Axis = layout.Vertical
+	view.wideList.Axis = layout.Vertical
 	return view
 }
 
@@ -89,6 +97,9 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	}
 	v.handleActions(gtx, e)
 	return layout.Inset{Top: 34, Bottom: 34, Left: 36, Right: 36}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		if e.Class == env.Expanded {
+			return v.layoutExpanded(gtx, e, v.filterLabels, selected)
+		}
 		return v.list.Layout(gtx, e.Th, len(v.items), func(gtx layout.Context, index int) layout.Dimensions {
 			item := v.items[index]
 			switch item.kind {
@@ -122,6 +133,7 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 
 func (v *View) rebuild(e *env.Env) {
 	v.items = v.items[:0]
+	v.historyStart = -1
 	v.jobs = v.jobs[:0]
 	for _, job := range e.Snap.Jobs {
 		if job.State == model.JobRunning && v.matches(job.Target) {
@@ -170,6 +182,7 @@ func (v *View) rebuild(e *env.Env) {
 	}
 	if len(v.groups) > 0 {
 		v.items = append(v.items, activityItem{kind: itemSection, text: "History"})
+		v.historyStart = len(v.items)
 		for groupIndex, group := range v.groups {
 			v.items = append(v.items, activityItem{kind: itemDay, text: group.Label})
 			for eventIndex := range group.Events {
@@ -212,6 +225,193 @@ func (v *View) layoutTitle(gtx layout.Context, e *env.Env, labels []string, sele
 			}),
 		)
 	})
+}
+
+func (v *View) layoutExpanded(gtx layout.Context, e *env.Env, labels []string, selected int) layout.Dimensions {
+	var blocks [3]itemKind
+	count := 0
+	if len(v.jobs) > 0 {
+		blocks[count] = itemWideJobs
+		count++
+	}
+	if len(v.spans) > 0 || len(v.alerts) > 0 {
+		blocks[count] = itemWideStatus
+		count++
+	}
+	if len(v.groups) > 0 {
+		blocks[count] = itemWideHistory
+		count++
+	}
+	if count == 0 {
+		blocks[0] = itemEmpty
+		count = 1
+	}
+	width := min(gtx.Constraints.Max.X, gtx.Dp(1240))
+	return activityCenteredPane(gtx, width, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layout.Inset{Bottom: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return v.layoutTitle(gtx, e, labels, selected)
+				})
+			}),
+			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				return v.wideList.Layout(gtx, e.Th, count, func(gtx layout.Context, index int) layout.Dimensions {
+					switch blocks[index] {
+					case itemWideJobs:
+						return v.layoutWideJobs(gtx, e)
+					case itemWideStatus:
+						return v.layoutWideStatus(gtx, e)
+					case itemWideHistory:
+						return v.layoutWideHistory(gtx, e)
+					default:
+						return kit.Empty(e.Th, icons.History, "No activity yet", "Work on a machine or connect to a server and its history will appear here.")(gtx)
+					}
+				})
+			}),
+		)
+	})
+}
+
+func (v *View) layoutWideJobs(gtx layout.Context, e *env.Env) layout.Dimensions {
+	return activityWideSection(gtx, e, "In progress", func(gtx layout.Context) layout.Dimensions {
+		return kit.Columns(gtx, 520, 13, len(v.jobs), func(gtx layout.Context, index int) layout.Dimensions {
+			return v.layoutJob(gtx, e, v.jobs[index])
+		})
+	})
+}
+
+func (v *View) layoutWideStatus(gtx layout.Context, e *env.Env) layout.Dimensions {
+	hasTimeline := len(v.spans) > 0
+	hasAlerts := len(v.alerts) > 0
+	return layout.Inset{Bottom: 21}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		switch {
+		case hasTimeline && hasAlerts:
+			return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(21)}.Layout(gtx,
+				layout.Flexed(.64, func(gtx layout.Context) layout.Dimensions {
+					return v.layoutTimelinePanel(gtx, e)
+				}),
+				layout.Flexed(.36, func(gtx layout.Context) layout.Dimensions {
+					return v.layoutAlertPanel(gtx, e)
+				}),
+			)
+		case hasTimeline:
+			width := min(gtx.Constraints.Max.X, gtx.Dp(760))
+			return activityCenteredPane(gtx, width, func(gtx layout.Context) layout.Dimensions {
+				return v.layoutTimelinePanel(gtx, e)
+			})
+		case hasAlerts:
+			width := min(gtx.Constraints.Max.X, gtx.Dp(520))
+			return activityCenteredPane(gtx, width, func(gtx layout.Context) layout.Dimensions {
+				return v.layoutAlertPanel(gtx, e)
+			})
+		default:
+			return layout.Dimensions{}
+		}
+	})
+}
+
+func (v *View) layoutTimelinePanel(gtx layout.Context, e *env.Env) layout.Dimensions {
+	return activityPanel(gtx, e, "Last hour", func(gtx layout.Context) layout.Dimensions {
+		return kit.Slab(gtx, e.Th.R.Stone1, e.Th.Cut.Mid, func(gtx layout.Context) layout.Dimensions {
+			return layout.UniformInset(16).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				return activityColumn(gtx, len(v.spans)+1, 0, func(gtx layout.Context, index int) layout.Dimensions {
+					if index == 0 {
+						return layout.Inset{Left: 180}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+							return layoutTimelineScale(gtx, e.Th)
+						})
+					}
+					return v.layoutTimelineRow(gtx, e, v.spans[index-1])
+				})
+			})
+		})
+	})
+}
+
+func (v *View) layoutAlertPanel(gtx layout.Context, e *env.Env) layout.Dimensions {
+	return activityPanel(gtx, e, "Needs you", func(gtx layout.Context) layout.Dimensions {
+		return activityColumn(gtx, len(v.alerts), 0, func(gtx layout.Context, index int) layout.Dimensions {
+			return v.layoutAlert(gtx, e, v.alerts[index])
+		})
+	})
+}
+
+func (v *View) layoutWideHistory(gtx layout.Context, e *env.Env) layout.Dimensions {
+	return activityWideSection(gtx, e, "History", func(gtx layout.Context) layout.Dimensions {
+		return kit.Slab(gtx, e.Th.R.Stone1, e.Th.Cut.Mid, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Left: 16, Right: 16, Bottom: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				count := 0
+				if v.historyStart >= 0 {
+					count = len(v.items) - v.historyStart
+				}
+				return activityColumn(gtx, count, 0, func(gtx layout.Context, index int) layout.Dimensions {
+					item := v.items[v.historyStart+index]
+					switch item.kind {
+					case itemDay:
+						top := unit.Dp(13)
+						if index == 0 {
+							top = 8
+						}
+						return layout.Inset{Top: top, Bottom: 4}.Layout(gtx, kit.Text(e.Th, e.Th.T.Group, e.Th.R.Fg3, item.text))
+					case itemEvent:
+						group := v.groups[item.index>>16]
+						return v.layoutEvent(gtx, e, group.Events[item.index&0xffff])
+					default:
+						return layout.Dimensions{}
+					}
+				})
+			})
+		})
+	})
+}
+
+func activityWideSection(gtx layout.Context, e *env.Env, title string, body layout.Widget) layout.Dimensions {
+	return layout.Inset{Bottom: 21}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return activityPanel(gtx, e, title, body)
+	})
+}
+
+func activityPanel(gtx layout.Context, e *env.Env, title string, body layout.Widget) layout.Dimensions {
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Bottom: 8}.Layout(gtx, kit.Text(e.Th, e.Th.T.Title, e.Th.R.Fg, title))
+		}),
+		layout.Rigid(body),
+	)
+}
+
+func activityCenteredPane(gtx layout.Context, width int, body layout.Widget) layout.Dimensions {
+	return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+		layout.Flexed(1, layout.Spacer{}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X = width
+			gtx.Constraints.Max.X = width
+			return body(gtx)
+		}),
+		layout.Flexed(1, layout.Spacer{}.Layout),
+	)
+}
+
+func activityColumn(gtx layout.Context, count int, gap unit.Dp, cell func(layout.Context, int) layout.Dimensions) layout.Dimensions {
+	y := 0
+	width := gtx.Constraints.Min.X
+	gapPixels := gtx.Dp(gap)
+	for index := range count {
+		childGTX := gtx
+		childGTX.Constraints.Min.Y = 0
+		childGTX.Constraints.Max.Y = max(0, gtx.Constraints.Max.Y-y)
+		macro := op.Record(gtx.Ops)
+		dimensions := cell(childGTX, index)
+		call := macro.Stop()
+		offset := op.Offset(image.Pt(0, y)).Push(gtx.Ops)
+		call.Add(gtx.Ops)
+		offset.Pop()
+		y += dimensions.Size.Y
+		if index+1 < count {
+			y += gapPixels
+		}
+		width = max(width, dimensions.Size.X)
+	}
+	return layout.Dimensions{Size: gtx.Constraints.Constrain(image.Pt(width, y))}
 }
 
 func (v *View) layoutJob(gtx layout.Context, e *env.Env, job model.Job) layout.Dimensions {

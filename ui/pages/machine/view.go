@@ -20,6 +20,7 @@ type View struct {
 	hardware   hardwareState
 	snapshots  snapshotState
 	sharing    sharingState
+	net        networkState
 	install    kit.Button
 	machineKey string
 }
@@ -44,6 +45,7 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 		v.hardware.reset()
 		v.snapshots.reset()
 		v.sharing.reset()
+		v.net.reset()
 	}
 	v.acts.handleClicks(gtx, e, resource, machine, job, making)
 
@@ -56,7 +58,6 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 		proof = jobProof(job)
 	}
 
-	note := machineNote(machine)
 	mark := common.Mark(e, resource, 44, e.Th.R.Fg)
 	header := func(gtx layout.Context) layout.Dimensions {
 		return v.header.Layout(gtx, e, common.HeaderContent{
@@ -65,7 +66,7 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			Name:    resource.Name,
 			Outline: outline,
 			Proof:   proof,
-			Note:    note,
+			Note:    startedNote(resource, e.Snap.Events, e.Now),
 			Acts:    v.actsWidget(e, resource, machine, job, making),
 			Below:   v.acts.belowWidget(e, resource.Name),
 		})
@@ -73,7 +74,7 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 
 	if making {
 		return v.pane.Layout(gtx, e, header, nil, 0, func(gtx layout.Context) layout.Dimensions {
-			return v.layoutBecoming(gtx, e, resource, machine, job)
+			return v.layoutBecoming(gtx, e, machine, job)
 		})
 	}
 
@@ -128,20 +129,4 @@ func tabIndex(tab string) int {
 		}
 	}
 	return 0
-}
-
-func machineNote(machine *store.Machine) string {
-	if machine == nil {
-		return ""
-	}
-	if machine.Disposable && machine.Sealed {
-		return "Disposable run. Changes are discarded when it stops. A sealed state is available."
-	}
-	if machine.Disposable {
-		return "Disposable run. Changes are discarded when it stops."
-	}
-	if machine.Sealed {
-		return "Sealed. You can return to this saved state."
-	}
-	return ""
 }

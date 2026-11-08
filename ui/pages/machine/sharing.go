@@ -15,16 +15,18 @@ import (
 
 type usbControl struct {
 	toggle kit.Toggle
+	button kit.Button
 	last   bool
 	init   bool
 }
 
 type sharingState struct {
-	usb         map[string]*usbControl
-	remove      []kit.Button
-	forward     kit.TextField
-	add, folder kit.Button
-	err         string
+	usb                      map[string]*usbControl
+	remove                   []kit.Button
+	forward                  kit.TextField
+	add, overviewAdd, folder kit.Button
+	err                      string
+	addOpen                  bool
 }
 
 func (s *sharingState) reset() {
@@ -32,6 +34,7 @@ func (s *sharingState) reset() {
 	s.remove = nil
 	s.forward.SetText("")
 	s.err = ""
+	s.addOpen = false
 }
 
 func (s *sharingState) usbFor(device vm.USBDevice) *usbControl {
@@ -41,6 +44,7 @@ func (s *sharingState) usbFor(device vm.USBDevice) *usbControl {
 	control := s.usb[device.ID]
 	if control == nil {
 		control = &usbControl{}
+		control.button.Small = true
 		s.usb[device.ID] = control
 	}
 	if !control.init || device.Assigned != control.last {
@@ -135,6 +139,95 @@ func (v *View) layoutSharing(gtx layout.Context, e *env.Env, resource model.Reso
 		}),
 	)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
+func (v *View) layoutOverviewSharing(gtx layout.Context, e *env.Env, resource model.Resource, machine *store.Machine) layout.Dimensions {
+	editable := resource.State == model.StateStopped
+	v.sharing.ensureForwards(len(machine.Forwards))
+	v.sharing.overviewAdd.Small = true
+	if editable && v.sharing.overviewAdd.Clicked(gtx) {
+		v.sharing.addOpen = !v.sharing.addOpen
+	}
+	if editable && v.sharing.addOpen && v.sharing.add.Clicked(gtx) {
+		spec := strings.TrimSpace(v.sharing.forward.Text())
+		if spec == "" || !strings.Contains(spec, ":") {
+			v.sharing.err = "Use host:guest, for example 2222:22."
+		} else {
+			e.Ops.AddForward(resource.Name, spec)
+			v.sharing.forward.SetText("")
+			v.sharing.err = ""
+			v.sharing.addOpen = false
+		}
+	}
+	if editable {
+		for i, forward := range machine.Forwards {
+			if v.sharing.remove[i].Clicked(gtx) {
+				e.Ops.RemoveForward(resource.Name, forwardSpec(forward))
+			}
+		}
+	}
+	add := func(gtx layout.Context) layout.Dimensions {
+		if !editable {
+			gtx = gtx.Disabled()
+		}
+		return v.sharing.overviewAdd.Layout(gtx, e.Th, kit.Line, icons.Add, "Add")
+	}
+	children := []layout.FlexChild{
+		layout.Rigid(common.SectionTitle(e.Th, "USB", nil)),
+	}
+	if len(machine.USB) == 0 {
+		children = append(children, layout.Rigid(kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, "No USB devices are available.")))
+	} else {
+		for _, device := range machine.USB {
+			device := device
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return v.overviewUSBRow(gtx, e, resource.Name, device, editable)
+			}))
+		}
+	}
+	children = append(children,
+		layout.Rigid(layout.Spacer{Height: 21}.Layout),
+		layout.Rigid(common.SectionTitle(e.Th, "Port forwards", add)),
+	)
+	for i, forward := range machine.Forwards {
+		i, forward := i, forward
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return forwardRow(gtx, e, forward, &v.sharing.remove[i], editable)
+		}))
+	}
+	if len(machine.Forwards) == 0 {
+		children = append(children, layout.Rigid(kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, "No ports are forwarded.")))
+	}
+	if v.sharing.addOpen {
+		children = append(children,
+			layout.Rigid(layout.Spacer{Height: 8}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return v.forwardEditor(gtx, e, editable)
+			}),
+		)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+}
+
+func (v *View) overviewUSBRow(gtx layout.Context, e *env.Env, name string, device vm.USBDevice, editable bool) layout.Dimensions {
+	control := v.sharing.usbFor(device)
+	if editable && control.button.Clicked(gtx) {
+		e.Ops.SetUSB(name, device.ID, !device.Assigned)
+	}
+	kind, icon, label := kit.Line, icons.Add, "Attach"
+	if device.Assigned {
+		kind, icon, label = kit.Gold, icons.Check, "Attached"
+	}
+	detail := "Available on this computer"
+	if device.Assigned {
+		detail = "Attached to " + name
+	}
+	return hardwareRow(e, device.Name, detail, func(gtx layout.Context) layout.Dimensions {
+		if !editable {
+			gtx = gtx.Disabled()
+		}
+		return control.button.Layout(gtx, e.Th, kind, icon, label)
+	})(gtx)
 }
 
 func (v *View) usbRow(gtx layout.Context, e *env.Env, name string, device vm.USBDevice, editable bool) layout.Dimensions {
