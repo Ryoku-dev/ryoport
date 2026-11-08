@@ -32,7 +32,7 @@ board second, and a place for long flows a distant third.
    machine's work pane and in Activity, and keeps going while you look away.
 5. **Nothing moves or polls when nobody is looking.** An idle Ryoport draws no
    frames.
-6. **Creating is a flow you enter on purpose**, from the New plaque.
+6. **Creating is a flow you enter on purpose**, from New in the rail.
 7. **Forms open in the work pane, not in dialogs.** Adding a server or a
    console, importing an ISO or making an instant machine is a draft in the
    work pane. Dialogs are only for decisions you cannot undo.
@@ -53,11 +53,13 @@ tonal containers, motion that answers a cause) in cut stone. Its thesis is
    inner shadows, inset wells or soft drop shadows. Overlays are a solid scrim
    and a slab one tone up with a hairline.
 3. **Bone is where you are.** The selected row, the current rail destination
-   and the current filter are bone slabs with ink type, Ryoku's inversion.
-4. **Gold is what you can do.** Flat gold leaf on consequential actions
-   (connect, start, stop, create, save, sign in); gold outline and gold type for
-   secondary actions. Navigation and view controls are stone and bone.
-   Nothing you can only watch is gold.
+   and the current filter are selection slabs with ink type: bone in Lithic's
+   own colours, the palette's secondary container on a Ryoku desktop.
+4. **Gold is what you can do.** A flat fill on consequential actions (connect,
+   start, stop, create, save, sign in); an outline and coloured type for
+   secondary actions. Navigation and view controls are stone and selection.
+   Nothing you can only watch is filled. On a Ryoku desktop the gold is the
+   palette's primary colour; elsewhere it is the host distro's own colour.
 5. **Stones are states,** always beside their word: jade alive (running,
    online), lapis becoming (starting, creating, downloading), amber needs you,
    jasper failed or unreachable, slate idle.
@@ -75,8 +77,9 @@ tonal containers, motion that answers a cause) in cut stone. Its thesis is
 8. **One family, set monumentally.** The selected thing's name in Space
    Grotesk Bold at 52 dp is the one big line of a view; everything else at work
    sizes.
-9. **Becoming is drawn.** A machine being made shows its name in outline,
-   filling with the progress, and its future facts as construction lines.
+9. **Becoming is shown, not drawn.** A machine being made shows its name in
+   outline, the stage and its progress on a blade, the four steps with the
+   current one carrying the tool's latest line, and the tool's last lines.
 
 ## Layout
 
@@ -92,19 +95,23 @@ Default window 1280 x 800, minimum 640 x 520. When the compositor does not draw
 decorations (GNOME), Ryoport draws its own window controls at the top right of
 the work pane and lets the empty top strip of each pane drag the window.
 
-**Rail.** The gold New plaque at the top, then Fleet, Activity and Settings.
-The current destination is a bone tile that moves to its new place. An update
-shows as a notch on the Settings tile and nowhere else.
+**Rail.** The Ryoport mark at the top is Home: it returns to the view from
+above. Then Fleet, New (Ctrl N) and Activity, with Settings at the bottom. The
+current destination is a selection tile that moves to its new place. An
+update shows as a notch on the Settings tile and nowhere else.
 
-**List pane.** The search field (Ctrl K opens the palette, / focuses it), one
-line saying how the fleet is ("Three running. mika-server needs you."), the
-filters with live counts (All, Machines, Servers, Consoles), then rows grouped
-by state in the order Needs you, Running, Becoming, Stopped. A row is a flat
-tablet, 56 dp (48 compact density): the notch, the engraved logo, the name, one
-line of facts, and on the right the claim and its proof ("Online" over
-"23 ms"). Hovering a row, or moving to it with the keyboard, swaps the claim
-for its one gold action. A becoming row carries its progress as a blade along
-its bottom edge. The selection is a bone slab that moves from row to row.
+**List pane.** A "Fleet" title over one line saying how the fleet is ("Three
+running. mika-server needs you."), the search field (Ctrl K opens the palette,
+/ focuses it), the filters with live counts (All, Machines, Servers, Consoles),
+then rows grouped by state in the order Needs you, Running, Becoming, Stopped.
+A row is a flat tablet, 56 dp (48 compact density): the notch, the engraved
+logo, the name, one line of facts with the machine's marks after them
+(Disposable in amber first, then Instant and Sealed), and on the right the
+claim and its proof ("Online" over "23 ms"; a server with a failed systemd unit
+stays under Running with "1 failed unit" in amber). Hovering a row, or moving
+to it with the keyboard while the list has focus, swaps the claim for its one
+action. A becoming row carries its progress as a blade along its bottom edge.
+The selection is a slab that moves from row to row.
 
 **Work pane.** The mineral field header: the engraved logo, the name, one
 sentence of proof, and the act row (a gold split button for the primary
@@ -124,19 +131,27 @@ history by day, filterable by resource. Jobs are drawn on one time scale, so a
 long install looks long.
 
 **Settings.** Appearance, new machine defaults, the VM engine, GPU
-passthrough, SSH keys, updates and about, as plain sections on flat stone.
+passthrough, SSH keys, updates and about. At full width a section index sits
+beside one 760 dp column; at medium width the index becomes a row of chips.
 
-**New.** The New plaque (Ctrl N) opens a menu: a machine from the catalogue,
-an instant cloud machine, a machine from an ISO, a machine from a template, a
-passthrough machine (when the host supports it), a server, a console. The
-catalogue takes the work pane with a searchable grid of systems; everything
-else is a draft in the work pane with the advanced part folded shut.
+**New.** New (Ctrl N) opens a menu: a machine from the catalogue, an instant
+cloud machine, a machine from an ISO, a machine from a template, a passthrough
+machine (when the host supports it), a server, a console. The catalogue takes
+the work pane: a searchable grid of systems with the chosen system open in a
+column beside it (releases, editions, the size it will get, Create); Enter in
+the search opens the highlighted system. Everything else is a draft in the
+work pane with the advanced part folded shut.
+
+**Escape** closes the topmost thing: an open menu, then the palette, a draft,
+the catalogue, and finally the open detail, which returns to the view from
+above.
 
 ## Tokens
 
-The neutrals come from the live Ryoku palette, so Ryoport matches the desktop
-and changes with the wallpaper; the stones and the gold are Lithic's own and
-do not change.
+On a Ryoku desktop every role but the state stones comes from the live Ryoku
+palette (matugen), so Ryoport matches the desktop and changes with the
+wallpaper. Forcing Dark or Light in Settings keeps Lithic's own neutrals for
+that mode but still takes the accents from the palette, re-toned for it.
 
 | Role | From the palette (dark) | Used for |
 |---|---|---|
@@ -147,13 +162,21 @@ do not change.
 | stone 4 | surfaceContainerHigh | menus, dialogs |
 | vein | surfaceContainerHighest | hairlines, quiet outlines |
 | fg, fg 2, fg 3 | onSurface, onSurfaceVariant, outline | type from strong to faint |
-| sel, on sel | inverseSurface, inverseOnSurface | bone: where you are |
+| sel, on sel | secondaryContainer, onSecondaryContainer | where you are |
+| gold, on gold | primary, onPrimary | what you can do |
+| gold ink | primary, lightened or darkened to 4.5:1 on stone 2 | gold type and outlines |
+| jasper | error | failed |
 
 Light palettes map the same roles from the other end of the scale, so the
 ground is the darkest stone and the work pane the lightest. Without a Ryoku
 palette, Ryoport uses Lithic's signature stones: ground `#0e0e0e` to vein
 `#393939` with bone `#e3e3e3`, or warm marble `#e2ddd4` to `#f4f1eb` with ink
 `#1d1b18`.
+
+On another distro, with no Ryoku palette, the gold is the host distro's own
+colour from `/etc/os-release` (Arch `#1793d1`, CachyOS `#00b3a1`, Fedora
+`#51a2da`, Void `#478061`, NixOS `#7ebae4`, Ubuntu `#e95420`, and so on), and
+the selection stays bone. With neither, the signature gold below stands.
 
 | Stone | Dark | Light | Means |
 |---|---|---|---|
@@ -162,6 +185,8 @@ palette, Ryoport uses Lithic's signature stones: ground `#0e0e0e` to vein
 | amber | `#e0954a` | `#94520f` | needs you |
 | jasper | `#e0553a` | `#b8321e` | failed |
 | gold | `#c9a861` | `#c9a45a`, type `#85651f` | what you can do |
+
+Jade, lapis and amber never follow the palette: they carry meaning.
 
 Mineral fields mix the stone into the work pane tone (17 percent for jade, 15
 for the others); slate fields are stone 3.
@@ -181,10 +206,10 @@ rest.
 |---|---|---|
 | press: the corners chip deeper (7 to 11 dp) and the plaque sinks 1 dp | 90 ms | you pressed it |
 | hover: the row steps up a tone, its claim gives way to its action | 160 ms | this is what Enter will do |
-| select: the bone slab moves; the mineral field changes stone | 240 ms, 320 ms | you are here now |
+| select: the selection slab moves; the mineral field changes stone | 240 ms, 320 ms | you are here now |
 | notch: a new state is cut into the corner | 200 ms | the state changed |
 | navigate: the rail tile and the tab blade slide | 240 ms | where you went |
-| become: construction lines draw, the outlined name fills, the blade advances | with the job | it is being made |
+| become: the outlined name fills and the blade advances | with the job | it is being made |
 | remove: a hairline strikes the name, the Undo placard drains | 5 s | you can still take it back |
 | delete: the slab breaks along a diagonal and falls away | 420 ms | it is gone |
 
