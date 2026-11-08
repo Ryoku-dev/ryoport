@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Ryoport
+GenericName=Fleet dashboard
+Comment=Machines, servers and consoles in one window
+Exec=ryoport
+Terminal=false
+Icon=dev.ryoku.ryoport
+StartupWMClass=dev.ryoku.ryoport
+Categories=System;Utility;Network;
+Keywords=vm;virtual machine;qemu;quickemu;vps;ssh;remote;server;terminal;putty;hub;

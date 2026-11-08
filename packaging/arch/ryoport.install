@@ -1,0 +1,3 @@
+post_upgrade() {
+  echo "Ryoport was updated. Quit and reopen it to use the new version."
+}

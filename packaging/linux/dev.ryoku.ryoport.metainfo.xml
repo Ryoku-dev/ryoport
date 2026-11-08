@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.ryoku.ryoport</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Ryoport</name>
+  <summary>Machines, servers and consoles in one window</summary>
+  <description>
+    <p>Ryoport starts, connects to and monitors local machines, passthrough machines, SSH servers and remote consoles.</p>
+  </description>
+  <launchable type="desktop-id">dev.ryoku.ryoport.desktop</launchable>
+  <url type="homepage">https://github.com/ryoku-dev/ryoport</url>
+  <url type="bugtracker">https://github.com/ryoku-dev/ryoport/issues</url>
+  <provides>
+    <binary>ryoport</binary>
+  </provides>
+  <releases>
+    <release version="1.0.0" date="2026-11-08"/>
+  </releases>
+</component>

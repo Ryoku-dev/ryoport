@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libegl1-mesa-dev libgles2-mesa-dev libvulkan-dev libx11-dev libx11-xcb-dev libxcursor-dev libxfixes-dev pkg-config
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Go format
+        run: make fmt-check
+
+      - name: Go vet
+        run: make vet
+
+      - name: Unit tests
+        run: go test -race ./...
+
+      - name: Changelog copy
+        run: make changelog-check
+
+      - name: Vendored modules
+        run: |
+          go mod vendor
+          if [[ -n "$(git status --porcelain --untracked-files=all -- go.mod go.sum vendor)" ]]; then
+            git status --short -- go.mod go.sum vendor
+            git diff -- go.mod go.sum vendor
+            echo "vendor/ is not in sync with go.mod and go.sum" >&2
+            exit 1
+          fi

@@ -1,0 +1,77 @@
+pkgname=ryoport
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Fleet dashboard for machines, servers and consoles"
+arch=('x86_64')
+url='https://github.com/ryoku-dev/ryoport'
+license=('GPL-3.0-or-later')
+depends=(
+  'wayland'
+  'libxkbcommon'
+  'libxkbcommon-x11'
+  'libx11'
+  'libxcursor'
+  'libxfixes'
+  'libglvnd'
+  'vulkan-icd-loader'
+  'openssh'
+  'desktop-file-utils'
+  'hicolor-icon-theme'
+  'polkit'
+)
+makedepends=(
+  'base-devel'
+  'go'
+  'pkgconf'
+)
+optdepends=(
+  'quickemu: create and run quickemu machines'
+  'qemu-desktop: run virtual machines'
+  'spice-gtk: connect to SPICE displays'
+  'libisoburn: seed installation images'
+  'cdrtools: prepare optical disk images'
+  'picocom: connect to serial consoles'
+  'inetutils: connect to Telnet consoles'
+  'freerdp: connect to RDP consoles'
+  'tigervnc: connect to VNC consoles'
+  'libsecret: save passwords in the system keyring'
+  'xdg-utils: open files and URLs'
+  'xdg-terminal-exec: open terminal sessions'
+)
+provides=('ryovm')
+conflicts=('ryovm')
+replaces=('ryovm')
+install=ryoport.install
+options=('!debug')
+source=()
+sha256sums=()
+
+prepare() {
+  local root
+  root="$(cd "$startdir/../.." && pwd)"
+  rm -rf "$srcdir/ryoport"
+  mkdir -p "$srcdir/ryoport"
+  tar \
+    --exclude='.git' \
+    --exclude='build' \
+    --exclude='dist' \
+    --exclude='./packaging/arch/pkg' \
+    --exclude='./packaging/arch/src' \
+    --exclude='./packaging/arch/*.pkg.tar.*' \
+    -C "$root" -cf - . | tar -C "$srcdir/ryoport" -xf -
+}
+
+build() {
+  cd "$srcdir/ryoport"
+  make build
+}
+
+check() {
+  cd "$srcdir/ryoport"
+  make test
+}
+
+package() {
+  cd "$srcdir/ryoport"
+  make SKIP_BUILD=1 DESTDIR="$pkgdir" PREFIX=/usr install
+}

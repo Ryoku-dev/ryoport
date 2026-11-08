@@ -1,0 +1,277 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to rebuild and publish, for example v1.0.2
+        required: true
+
+permissions:
+  contents: write
+  checks: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  reserve:
+    name: Release plan and reservation
+    runs-on: ubuntu-24.04
+    outputs:
+      action: ${{ steps.plan.outputs.action }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+          fetch-depth: 0
+
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+            [[ "$tag" =~ ^v1\.(0|[1-9][0-9]*)\.[0-9]$ ]] || { echo "expected a canonical v1 tag" >&2; exit 1; }
+            git rev-parse -q --verify "refs/tags/$tag" >/dev/null || { echo "$tag does not exist" >&2; exit 1; }
+            version="${tag#v}"
+            declared="$(sed -n 's/^const Version = "\([0-9.]*\)"$/\1/p' internal/version/version.go)"
+            [[ "$declared" == "$version" ]] || { echo "$tag contains version $declared" >&2; exit 1; }
+            {
+              echo "action=republish"
+              echo "version=$version"
+              echo "tag=$tag"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          source_sha="$(git rev-parse HEAD)"
+          reserved=""
+          for candidate in $(git tag -l 'v1.*'); do
+            [[ "$candidate" =~ ^v1\.(0|[1-9][0-9]*)\.[0-9]$ ]] || continue
+            tagged="$(git rev-parse "$candidate^{commit}")"
+            parent="$(git rev-parse "$candidate^{commit}^1" 2>/dev/null || printf none)"
+            if [[ "$tagged" == "$source_sha" || "$parent" == "$source_sha" ]]; then
+              reserved="$candidate"
+              break
+            fi
+          done
+
+          if [[ -n "$reserved" ]]; then
+            version="${reserved#v}"
+            release_json="$(gh release view "$reserved" --json isDraft,isPrerelease,assets 2>/dev/null || true)"
+            if RELEASE_JSON="$release_json" VERSION="$version" python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          try:
+              release = json.loads(os.environ["RELEASE_JSON"])
+              version = os.environ["VERSION"]
+              package = f"ryoport-{version}-1-x86_64.pkg.tar.zst"
+              binary = f"ryoport-{version}-linux-x86_64.tar.gz"
+              source = f"ryoport-{version}.tar.gz"
+              required = {package, package + ".sha256", binary, binary + ".sha256", source, source + ".sha256"}
+              complete = not release["isDraft"] and not release["isPrerelease"] and required <= {asset["name"] for asset in release["assets"]}
+          except (ValueError, KeyError):
+              complete = False
+          sys.exit(0 if complete else 1)
+          PY
+            then
+              action=skip
+            else
+              action=republish
+            fi
+            {
+              echo "action=$action"
+              echo "version=$version"
+              echo "tag=$reserved"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          version="$(scripts/next-version.sh)"
+          {
+            echo "action=release"
+            echo "version=$version"
+            echo "tag=v$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the source checks
+        if: steps.plan.outputs.action == 'release'
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            checks="$(gh api "repos/$REPOSITORY/commits/$SOURCE_SHA/check-runs?per_page=100")"
+            relevant="$(jq '[.check_runs[] | select(.name | test("release"; "i") | not)]' <<<"$checks")"
+            count="$(jq 'length' <<<"$relevant")"
+            pending="$(jq '[.[] | select(.status != "completed")] | length' <<<"$relevant")"
+            if (( count > 0 && pending == 0 )); then
+              failed="$(jq '[.[] | select(.conclusion != "success" and .conclusion != "skipped")] | length' <<<"$relevant")"
+              (( failed == 0 )) || { jq -r '.[] | select(.conclusion != "success" and .conclusion != "skipped") | "failed: \(.name): \(.conclusion)"' <<<"$relevant"; exit 1; }
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "timed out waiting for source checks" >&2
+          exit 1
+
+      - name: Check out the reserved tag
+        if: steps.plan.outputs.action == 'republish'
+        run: git checkout --force --detach "${{ steps.plan.outputs.tag }}"
+
+      - name: Sync release files
+        if: steps.plan.outputs.action == 'release'
+        run: scripts/sync-version.sh "${{ steps.plan.outputs.version }}" --release
+
+      - name: Check release files
+        if: steps.plan.outputs.action != 'skip'
+        run: scripts/check-release.sh
+
+      - name: Reserve the version
+        if: steps.plan.outputs.action == 'release'
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md internal/version/version.go internal/version/CHANGELOG.md packaging/arch/PKGBUILD packaging/linux/dev.ryoku.ryoport.metainfo.xml flake.nix
+          git commit --allow-empty -m "release: $TAG"
+          git tag -a "$TAG" -m "Ryoport $TAG" -m "Source-Commit: $SOURCE_SHA"
+          git push origin "refs/tags/$TAG"
+          remote_head="$(git ls-remote origin "refs/heads/$DEFAULT_BRANCH" | cut -f1)"
+          if [[ "$remote_head" == "$SOURCE_SHA" ]]; then
+            git push origin "HEAD:refs/heads/$DEFAULT_BRANCH" || echo "The branch moved or is protected; the tag remains reserved."
+          fi
+
+  package:
+    name: Build the Arch package
+    needs: reserve
+    if: needs.reserve.outputs.action != 'skip'
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install git for checkout
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.reserve.outputs.tag }}
+
+      - name: Build the package
+        run: scripts/build-arch-package.sh "$GITHUB_WORKSPACE/dist"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: dist/ryoport-*-x86_64.pkg.tar.zst*
+          if-no-files-found: error
+
+  binary:
+    name: Build the Linux tarball
+    needs: reserve
+    if: needs.reserve.outputs.action != 'skip'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.reserve.outputs.tag }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libegl1-mesa-dev libgles2-mesa-dev libvulkan-dev libx11-dev libx11-xcb-dev libxcursor-dev libxfixes-dev pkg-config
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Build the tarball
+        run: scripts/build-tarball.sh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: dist/ryoport-*-linux-x86_64.tar.gz*
+          if-no-files-found: error
+
+  publish:
+    name: Publish the GitHub release
+    needs: [reserve, package, binary]
+    if: needs.reserve.outputs.action != 'skip'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.reserve.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: arch-package
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-tarball
+          path: dist
+
+      - name: Build the source archive
+        env:
+          TAG: ${{ needs.reserve.outputs.tag }}
+          VERSION: ${{ needs.reserve.outputs.version }}
+        run: |
+          set -euo pipefail
+          name="ryoport-$VERSION"
+          git archive --format=tar --prefix="$name/" "$TAG" | gzip -n > "dist/$name.tar.gz"
+          ( cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" )
+
+      - name: Write release notes
+        env:
+          TAG: ${{ needs.reserve.outputs.tag }}
+        run: scripts/release-notes.sh "$TAG" > dist/NOTES.md
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.reserve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          assets=(dist/*.pkg.tar.zst dist/*.tar.gz dist/*.sha256)
+          latest="$(gh release list --limit 1000 --json isLatest,tagName --jq '.[] | select(.isLatest) | .tagName')"
+          promote="$(python3 - "$TAG" "$latest" <<'PY'
+          import re
+          import sys
+
+          def version(tag):
+              return tuple(map(int, tag[1:].split("."))) if re.fullmatch(r"v1\.(0|[1-9][0-9]*)\.[0-9]", tag) else (0, 0, 0)
+
+          print("true" if version(sys.argv[1]) >= version(sys.argv[2]) else "false")
+          PY
+          )"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" --draft=false --prerelease=false --latest="$promote" --notes-file dist/NOTES.md
+          else
+            gh release create "$TAG" "${assets[@]}" --latest="$promote" --title "Ryoport $TAG" --notes-file dist/NOTES.md
+          fi
