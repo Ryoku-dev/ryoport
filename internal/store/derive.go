@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryoku-dev/ryoport/internal/build"
 	"github.com/ryoku-dev/ryoport/internal/console"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/remote"
@@ -50,9 +51,15 @@ func deriveResources(snap *Snapshot, starting map[string]bool) []model.Resource 
 	for alias, server := range snap.Servers {
 		id := model.NewID(model.KindServer, alias)
 		state := serverState(server.Reach, server.Probe)
+		icon := "server"
+		if server.Probe != nil {
+			if slug := build.DistroSlug(server.Probe.Distro); slug != "" {
+				icon = slug
+			}
+		}
 		resources = append(resources, model.Resource{
 			ID: id, Kind: model.KindServer, Name: alias, State: state,
-			Detail: serverDetail(server.Host), Icon: "server", Group: server.Group,
+			Detail: serverDetail(server.Host), Icon: icon, Group: server.Group,
 			Tags: append([]string(nil), server.Tags...), Pinned: server.Pinned,
 			Primary: serverPrimary(state), Updated: snap.At,
 		})
@@ -63,7 +70,7 @@ func deriveResources(snap *Snapshot, starting map[string]bool) []model.Resource 
 		resources = append(resources, model.Resource{
 			ID: id, Kind: model.KindConsole, Name: profile.Name, State: state,
 			Detail: consoleDetail(profile), Icon: profile.Kind,
-			Pinned: isPinned(snap.Settings.Pinned, id), Primary: model.VerbConnect, Updated: snap.At,
+			Pinned: isPinned(snap.Settings.Pinned, id), Primary: consolePrimary(state), Updated: snap.At,
 		})
 	}
 	sortResources(resources)
@@ -142,6 +149,15 @@ func serverState(reach *remote.Reach, probe *remote.Probe) model.State {
 func serverPrimary(state model.State) model.Verb {
 	if state == model.StateNeedsAuth {
 		return model.VerbSetPass
+	}
+	return model.VerbConnect
+}
+
+// consolePrimary offers Connect only when the console can answer; an unplugged
+// serial adapter or an unreachable host gets no action until it comes back.
+func consolePrimary(state model.State) model.Verb {
+	if state == model.StateOffline {
+		return model.VerbNone
 	}
 	return model.VerbConnect
 }

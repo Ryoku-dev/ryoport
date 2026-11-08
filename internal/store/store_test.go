@@ -14,6 +14,7 @@ import (
 	"github.com/ryoku-dev/ryoport/internal/remote"
 	"github.com/ryoku-dev/ryoport/internal/update"
 	"github.com/ryoku-dev/ryoport/internal/vm"
+	"github.com/ryoku-dev/ryoport/internal/xdg"
 )
 
 func TestIntervalTable(t *testing.T) {
@@ -287,8 +288,7 @@ func TestPublishedSnapshotsAreImmutable(t *testing.T) {
 	s.mu.Lock()
 	s.settings.Pinned = append(s.settings.Pinned, "machine:lab")
 	s.machines["lab"] = &Machine{Detail: vm.Detail{Machine: vm.Machine{Name: "lab", Installed: true}}}
-	s.metrics[model.NewID(model.KindMachine, "lab")] = map[model.Metric]*model.Series{model.MetricCPU: model.NewSeries(150)}
-	s.metrics[model.NewID(model.KindMachine, "lab")][model.MetricCPU].Push(0.5, now)
+	s.pushMetricsLocked(model.NewID(model.KindMachine, "lab"), []metricSample{{metric: model.MetricCPU, value: 0.5}}, now)
 	s.publishLocked()
 	s.mu.Unlock()
 	after := s.Snapshot()
@@ -307,10 +307,41 @@ func TestPublishedSnapshotsAreImmutable(t *testing.T) {
 		t.Fatal("unchanged machine was not shared between snapshots")
 	}
 	s.mu.Lock()
-	s.metrics[model.NewID(model.KindMachine, "lab")][model.MetricCPU].Push(0.75, now.Add(time.Second))
+	s.pushMetricsLocked(model.NewID(model.KindMachine, "lab"), []metricSample{{metric: model.MetricCPU, value: 0.75}}, now.Add(time.Second))
 	s.mu.Unlock()
 	if series.Len() != 1 {
 		t.Fatalf("published series mutated, len = %d", series.Len())
+	}
+}
+
+func TestIdenticalMachinePollPublishesOnce(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	invalidations := 0
+	s := New(Options{
+		Now:        func() time.Time { return now },
+		Invalidate: func() { invalidations++ },
+	})
+	result := map[string]*Machine{
+		"lab": &Machine{Detail: vm.Detail{Machine: vm.Machine{Name: "lab", Installed: true}}},
+	}
+	if !s.applyMachines(result) {
+		t.Fatal("first machine poll was ignored")
+	}
+	firstRev := s.Snapshot().Rev
+	if invalidations != 1 {
+		t.Fatalf("first invalidations = %d, want 1", invalidations)
+	}
+	again := map[string]*Machine{
+		"lab": &Machine{Detail: vm.Detail{Machine: vm.Machine{Name: "lab", Installed: true}}},
+	}
+	if s.applyMachines(again) {
+		t.Fatal("identical machine poll published")
+	}
+	if got := s.Snapshot().Rev; got != firstRev {
+		t.Fatalf("revision changed from %d to %d", firstRev, got)
+	}
+	if invalidations != 1 {
+		t.Fatalf("invalidations = %d, want 1", invalidations)
 	}
 }
 
@@ -326,5 +357,59 @@ func TestMachineResourcePinnedFromSettings(t *testing.T) {
 	resources := deriveResources(snap, map[string]bool{})
 	if len(resources) != 1 || !resources[0].Pinned {
 		t.Fatalf("resources = %#v", resources)
+	}
+}
+
+func TestCachedLogoResolvesWithoutCatalog(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if err := os.MkdirAll(xdg.IconCache(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(xdg.IconCache(), "ubuntu.svg")
+	if err := os.WriteFile(path, []byte("<svg/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	debianPath := filepath.Join(xdg.IconCache(), "debian.png")
+	if err := os.WriteFile(debianPath, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := New(Options{})
+	s.mu.Lock()
+	s.machines["lab"] = &Machine{Detail: vm.Detail{Machine: vm.Machine{Name: "lab", OS: "ubuntu", Installed: true}}}
+	s.publishLocked()
+	s.mu.Unlock()
+
+	s.resolveLogos([]string{"ubuntu"})
+	s.resolveLogos([]string{"debian"})
+
+	snap := s.Snapshot()
+	if got := snap.Catalog.Logos["ubuntu"]; got != path {
+		t.Fatalf("cached logo = %q, want %q", got, path)
+	}
+	if got := snap.Catalog.Logos["debian"]; got != debianPath {
+		t.Fatalf("merged cached logo = %q, want %q", got, debianPath)
+	}
+	if got := snap.Machines["lab"].Logo; got != path {
+		t.Fatalf("machine logo = %q, want %q", got, path)
+	}
+}
+
+func TestServerResourceUsesDistroSlug(t *testing.T) {
+	snap := &Snapshot{
+		At:          time.Unix(1, 0),
+		Settings:    config.Defaults(),
+		Machines:    map[string]*Machine{},
+		Passthrough: map[string]*Passthrough{},
+		Servers: map[string]*Server{
+			"node": {
+				Host:  remote.Host{Alias: "node"},
+				Probe: &remote.Probe{Distro: "Debian GNU/Linux 13"},
+			},
+		},
+		Consoles: map[string]*Console{},
+	}
+	resources := deriveResources(snap, nil)
+	if len(resources) != 1 || resources[0].Icon != "debian" {
+		t.Fatalf("server resources = %#v", resources)
 	}
 }

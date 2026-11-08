@@ -13,6 +13,45 @@ import (
 	"github.com/ryoku-dev/ryoport/internal/xdg"
 )
 
+func TestDistroSlug(t *testing.T) {
+	tests := []struct {
+		distro string
+		want   string
+	}{
+		{"Arch Linux", "archlinux"},
+		{"Ubuntu 26.04 LTS", "ubuntu"},
+		{"Debian GNU/Linux 13", "debian"},
+		{"FEDORA LINUX 44", "fedora"},
+		{"Linux Mint 23", "linuxmint"},
+		{"Alpine Linux v3.24", "alpine"},
+		{"CentOS Stream 10", "centos-stream"},
+		{"Rocky Linux 10", "rockylinux"},
+		{"AlmaLinux 10", "alma"},
+		{"openSUSE Tumbleweed", "opensuse"},
+		{"NixOS 26.05", "nixos"},
+		{"Void Linux", "void"},
+		{"Gentoo Linux", "gentoo"},
+		{"Manjaro Linux", "manjaro"},
+		{"Pop!_OS 24.04", "popos"},
+		{"Kali GNU/Linux Rolling", "kali"},
+		{"Proxmox VE 9", "proxmox-ve"},
+		{"EndeavourOS", "endeavouros"},
+		{"CachyOS", "cachyos"},
+		{"elementary OS 8", "elementary"},
+		{"Zorin OS 18", "zorin"},
+		{"  ubuntu core  ", "ubuntu"},
+		{"Unknown Linux", ""},
+		{"", ""},
+	}
+	for _, test := range tests {
+		t.Run(test.distro, func(t *testing.T) {
+			if got := DistroSlug(test.distro); got != test.want {
+				t.Fatalf("DistroSlug(%q) = %q, want %q", test.distro, got, test.want)
+			}
+		})
+	}
+}
+
 func TestCatalogGroupingAndDefaults(t *testing.T) {
 	testEnvironment(t)
 	fixture := `[

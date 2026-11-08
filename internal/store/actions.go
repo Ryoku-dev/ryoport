@@ -71,10 +71,12 @@ func (s *Store) recordLocked(level model.EventLevel, text string, target model.I
 
 func (s *Store) pushNoticeLocked(level model.EventLevel, text string, target model.ID, undo string) {
 	s.nextID++
-	s.notices = append(s.notices, Notice{ID: s.nextID, Level: level, Text: text, Target: target, Undo: undo})
-	if len(s.notices) > 3 {
-		s.notices = append([]Notice(nil), s.notices[len(s.notices)-3:]...)
+	notice := Notice{ID: s.nextID, Level: level, Text: text, Target: target, Undo: undo}
+	next := append(append([]Notice(nil), s.notices...), notice)
+	if len(next) > 3 {
+		next = append([]Notice(nil), next[len(next)-3:]...)
 	}
+	s.notices = next
 }
 
 func (s *Store) Primary(id model.ID) {

@@ -107,7 +107,9 @@ type Notice struct {
 }
 
 // Snapshot is never mutated after it is published; a frame reads it without
-// locks. Maps are keyed by the resource key (machine name, alias, console id).
+// locks. Every map, slice and pointed-to value is immutable and may be shared
+// with later snapshots. UI code must never modify any of them. Maps are keyed
+// by the resource key (machine name, alias, console id).
 type Snapshot struct {
 	Rev         uint64
 	At          time.Time

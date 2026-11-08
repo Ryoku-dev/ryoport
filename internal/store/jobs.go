@@ -3,16 +3,18 @@ package store
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ryoku-dev/ryoport/internal/build"
 	"github.com/ryoku-dev/ryoport/internal/config"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/update"
+	"github.com/ryoku-dev/ryoport/internal/xdg"
 )
 
 type jobRunner func(context.Context, func(build.Event)) (string, error)
@@ -194,36 +196,86 @@ func (s *Store) LoadCatalog(refresh bool) {
 }
 
 func (s *Store) prefetchLogos(systems []build.OS) {
-	workers := min(12, len(systems))
-	if workers == 0 {
+	slugs := make([]string, 0, len(systems))
+	for _, system := range systems {
+		slugs = append(slugs, system.OS)
+	}
+	s.resolveLogos(slugs)
+}
+
+func (s *Store) resolveLogos(slugs []string) {
+	seen := make(map[string]bool, len(slugs))
+	for _, slug := range slugs {
+		if seen[slug] || !validLogoSlug(slug) {
+			continue
+		}
+		seen[slug] = true
+		s.mu.Lock()
+		resolved := s.catalog.Logos[slug] != ""
+		requested := s.logosRequested[slug]
+		s.mu.Unlock()
+		if resolved {
+			continue
+		}
+		if path := cachedLogo(slug); path != "" {
+			s.publishLogo(slug, path)
+			continue
+		}
+		if requested {
+			continue
+		}
+		s.mu.Lock()
+		if s.catalog.Logos[slug] != "" || s.logosRequested[slug] {
+			s.mu.Unlock()
+			continue
+		}
+		s.logosRequested[slug] = true
+		s.mu.Unlock()
+		go s.fetchLogo(slug)
+	}
+}
+
+func (s *Store) fetchLogo(slug string) {
+	ctx := s.currentContext()
+	select {
+	case s.logoSlots <- struct{}{}:
+	case <-ctx.Done():
 		return
 	}
-	ctx := s.currentContext()
-	names := make(chan string)
-	var wait sync.WaitGroup
-	wait.Add(workers)
-	for range workers {
-		go func() {
-			defer wait.Done()
-			for osName := range names {
-				logo := s.o.Build.Prefetch(ctx, []string{osName})[osName]
-				if logo != "" {
-					s.publishLogo(osName, logo)
-				}
-			}
-		}()
+	logo := s.o.Build.Prefetch(ctx, []string{slug})[slug]
+	<-s.logoSlots
+	if logo != "" {
+		s.publishLogo(slug, logo)
 	}
-	for _, system := range systems {
-		select {
-		case names <- system.OS:
-		case <-ctx.Done():
-			close(names)
-			wait.Wait()
-			return
+}
+
+func cachedLogo(slug string) string {
+	for _, extension := range []string{".svg", ".png"} {
+		path := filepath.Join(xdg.IconCache(), slug+extension)
+		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() && info.Size() > 0 {
+			return path
 		}
 	}
-	close(names)
-	wait.Wait()
+	return ""
+}
+
+func validLogoSlug(slug string) bool {
+	if slug == "" {
+		return false
+	}
+	first := slug[0]
+	if (first < 'a' || first > 'z') && (first < '0' || first > '9') {
+		return false
+	}
+	for _, char := range slug {
+		alpha := char >= 'a' && char <= 'z'
+		digit := char >= '0' && char <= '9'
+		if alpha || digit || char == '.' || char == '_' || char == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (s *Store) publishLogo(osName, logo string) {

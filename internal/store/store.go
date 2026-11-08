@@ -47,51 +47,55 @@ type Store struct {
 	wakeMu   sync.Mutex
 	wake     chan struct{}
 
-	host        Host
-	settings    config.Settings
-	machines    map[string]*Machine
-	passthrough map[string]*Passthrough
-	gpu         passthrough.Readiness
-	servers     map[string]*Server
-	consoles    map[string]*Console
-	keys        remote.Keys
-	metrics     map[model.ID]map[model.Metric]*model.Series
-	counters    map[model.ID]counterSample
-	jobs        map[string]*runningJob
-	events      []model.Event
-	notices     []Notice
-	catalog     Catalog
-	update      update.Info
-	loaded      map[Source]bool
-	errors      map[Source]string
-	starting    map[string]bool
-	undo        map[string]undoEntry
-	locks       map[model.ID]*sync.Mutex
-	log         *events.Log
-	nextID      uint64
-	rev         uint64
+	host           Host
+	settings       config.Settings
+	machines       map[string]*Machine
+	passthrough    map[string]*Passthrough
+	gpu            passthrough.Readiness
+	servers        map[string]*Server
+	consoles       map[string]*Console
+	keys           remote.Keys
+	metrics        map[model.ID]map[model.Metric]*model.Series
+	counters       map[model.ID]counterSample
+	jobs           map[string]*runningJob
+	events         []model.Event
+	notices        []Notice
+	catalog        Catalog
+	logosRequested map[string]bool
+	logoSlots      chan struct{}
+	update         update.Info
+	loaded         map[Source]bool
+	errors         map[Source]string
+	starting       map[string]bool
+	undo           map[string]undoEntry
+	locks          map[model.ID]*sync.Mutex
+	log            *events.Log
+	nextID         uint64
+	rev            uint64
 }
 
 func New(o Options) *Store {
 	o = normalizeOptions(o)
 	s := &Store{
-		o:           o,
-		ctx:         context.Background(),
-		wake:        make(chan struct{}, 1),
-		settings:    config.Defaults(),
-		machines:    make(map[string]*Machine),
-		passthrough: make(map[string]*Passthrough),
-		servers:     make(map[string]*Server),
-		consoles:    make(map[string]*Console),
-		metrics:     make(map[model.ID]map[model.Metric]*model.Series),
-		counters:    make(map[model.ID]counterSample),
-		jobs:        make(map[string]*runningJob),
-		loaded:      make(map[Source]bool),
-		errors:      make(map[Source]string),
-		starting:    make(map[string]bool),
-		undo:        make(map[string]undoEntry),
-		locks:       make(map[model.ID]*sync.Mutex),
-		catalog:     Catalog{Logos: make(map[string]string)},
+		o:              o,
+		ctx:            context.Background(),
+		wake:           make(chan struct{}, 1),
+		settings:       config.Defaults(),
+		machines:       make(map[string]*Machine),
+		passthrough:    make(map[string]*Passthrough),
+		servers:        make(map[string]*Server),
+		consoles:       make(map[string]*Console),
+		metrics:        make(map[model.ID]map[model.Metric]*model.Series),
+		counters:       make(map[model.ID]counterSample),
+		jobs:           make(map[string]*runningJob),
+		loaded:         make(map[Source]bool),
+		errors:         make(map[Source]string),
+		starting:       make(map[string]bool),
+		undo:           make(map[string]undoEntry),
+		locks:          make(map[model.ID]*sync.Mutex),
+		catalog:        Catalog{Logos: make(map[string]string)},
+		logosRequested: make(map[string]bool),
+		logoSlots:      make(chan struct{}, 12),
 	}
 	s.publishLocked()
 	return s
@@ -149,6 +153,10 @@ func (s *Store) Snapshot() *Snapshot {
 
 func (s *Store) publish() {
 	s.mu.Lock()
+	if !s.pruneJobsLocked(s.o.Now()) {
+		s.mu.Unlock()
+		return
+	}
 	s.publishLocked()
 	s.mu.Unlock()
 	s.o.Invalidate()
@@ -156,11 +164,7 @@ func (s *Store) publish() {
 
 func (s *Store) publishLocked() {
 	now := s.o.Now()
-	for id, job := range s.jobs {
-		if job.job.State != model.JobRunning && !job.job.Finished.IsZero() && now.Sub(job.job.Finished) >= 30*time.Minute {
-			delete(s.jobs, id)
-		}
-	}
+	s.pruneJobsLocked(now)
 	s.rev++
 	snap := &Snapshot{
 		Rev:         s.rev,
@@ -173,11 +177,11 @@ func (s *Store) publishLocked() {
 		Servers:     cloneServers(s.servers),
 		Consoles:    cloneConsoles(s.consoles),
 		Keys:        cloneKeys(s.keys),
-		Metrics:     cloneMetrics(s.metrics),
+		Metrics:     s.metrics,
 		Jobs:        snapshotJobs(s.jobs),
-		Events:      append([]model.Event(nil), s.events...),
-		Notices:     append([]Notice(nil), s.notices...),
-		Catalog:     cloneCatalog(s.catalog),
+		Events:      s.events,
+		Notices:     s.notices,
+		Catalog:     s.catalog,
 		Update:      s.update,
 		Loaded:      cloneMap(s.loaded),
 		Errors:      cloneMap(s.errors),
@@ -185,6 +189,17 @@ func (s *Store) publishLocked() {
 	snap.Resources = deriveResources(snap, s.starting)
 	snap.Alerts = deriveAlerts(snap)
 	s.snapshot.Store(snap)
+}
+
+func (s *Store) pruneJobsLocked(now time.Time) bool {
+	changed := false
+	for id, job := range s.jobs {
+		if job.job.State != model.JobRunning && !job.job.Finished.IsZero() && now.Sub(job.job.Finished) >= 30*time.Minute {
+			delete(s.jobs, id)
+			changed = true
+		}
+	}
+	return changed
 }
 
 func cloneSettings(in config.Settings) config.Settings {
@@ -220,22 +235,6 @@ func cloneConsoles(in map[string]*Console) map[string]*Console {
 
 func cloneKeys(in remote.Keys) remote.Keys {
 	return remote.Keys{Agent: append([]remote.AgentKey(nil), in.Agent...), Files: append([]remote.FileKey(nil), in.Files...)}
-}
-
-func cloneMetrics(in map[model.ID]map[model.Metric]*model.Series) map[model.ID]map[model.Metric]*model.Series {
-	out := make(map[model.ID]map[model.Metric]*model.Series, len(in))
-	for id, metrics := range in {
-		cloned := make(map[model.Metric]*model.Series, len(metrics))
-		for metric, series := range metrics {
-			cloned[metric] = series.Clone()
-		}
-		out[id] = cloned
-	}
-	return out
-}
-
-func cloneCatalog(in Catalog) Catalog {
-	return in
 }
 
 func snapshotJobs(in map[string]*runningJob) []model.Job {

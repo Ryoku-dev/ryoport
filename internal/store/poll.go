@@ -5,10 +5,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ryoku-dev/ryoport/internal/build"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/passthrough"
 	"github.com/ryoku-dev/ryoport/internal/qmp"
@@ -136,13 +138,15 @@ func (s *Store) cadenceLoop(source pollSource, refresh func()) {
 
 func (s *Store) SetFocus(focus Focus) {
 	s.mu.Lock()
-	previous := s.focus.Selected
+	previous := s.focus
+	if focus == previous {
+		s.mu.Unlock()
+		return
+	}
 	s.focus = focus
-	s.publishLocked()
 	s.mu.Unlock()
-	s.o.Invalidate()
 	s.signalPollers()
-	if focus.Selected != previous && focus.Selected.Kind() == model.KindMachine {
+	if focus.Selected != previous.Selected && focus.Selected.Kind() == model.KindMachine {
 		go s.refreshMachineAux(focus.Selected.Key())
 	}
 }
@@ -174,6 +178,7 @@ func (s *Store) refreshMachines() {
 		return
 	}
 	result := make(map[string]*Machine, len(list))
+	slugs := make([]string, 0, len(list))
 	for _, item := range list {
 		detail, detailErr := s.o.VM.Get(ctx, item.Name)
 		if detailErr != nil {
@@ -186,25 +191,45 @@ func (s *Store) refreshMachines() {
 		machine := &Machine{Detail: detail, Logo: logo}
 		if old != nil {
 			machine.Stats, machine.USB, machine.Forwards = old.Stats, old.USB, old.Forwards
-			if old.Logo != "" {
+			if old.Logo != "" && old.OS == detail.OS {
 				machine.Logo = old.Logo
 			}
 		}
+		if detail.OS != "" {
+			slugs = append(slugs, detail.OS)
+		}
 		result[item.Name] = machine
 	}
+	changed := s.applyMachines(result)
+	s.resolveLogos(slugs)
+	if changed {
+		s.signalPollers()
+	}
+}
+
+func (s *Store) applyMachines(result map[string]*Machine) bool {
 	s.mu.Lock()
-	s.machines = result
+	changed := !reflect.DeepEqual(s.machines, result)
+	if changed {
+		s.machines = result
+	}
 	for name, machine := range result {
 		if machine.Running {
-			delete(s.starting, name)
+			if _, ok := s.starting[name]; ok {
+				delete(s.starting, name)
+				changed = true
+			}
 		}
 	}
-	s.loaded[SourceMachines] = true
-	delete(s.errors, SourceMachines)
-	s.publishLocked()
+	changed = s.markSourceSuccessLocked(SourceMachines) || changed
+	if changed {
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
-	s.signalPollers()
+	if changed {
+		s.o.Invalidate()
+	}
+	return changed
 }
 
 func (s *Store) refreshServers() {
@@ -224,13 +249,19 @@ func (s *Store) refreshServers() {
 		}
 		result[host.Alias] = server
 	}
-	s.servers = result
-	s.loaded[SourceServers] = true
-	delete(s.errors, SourceServers)
-	s.publishLocked()
+	changed := !reflect.DeepEqual(s.servers, result)
+	if changed {
+		s.servers = result
+	}
+	changed = s.markSourceSuccessLocked(SourceServers) || changed
+	if changed {
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
-	s.signalPollers()
+	if changed {
+		s.o.Invalidate()
+		s.signalPollers()
+	}
 }
 
 func (s *Store) refreshConsoles() {
@@ -248,12 +279,18 @@ func (s *Store) refreshConsoles() {
 		}
 		result[profile.ID] = entry
 	}
-	s.consoles = result
-	s.loaded[SourceConsoles] = true
-	delete(s.errors, SourceConsoles)
-	s.publishLocked()
+	changed := !reflect.DeepEqual(s.consoles, result)
+	if changed {
+		s.consoles = result
+	}
+	changed = s.markSourceSuccessLocked(SourceConsoles) || changed
+	if changed {
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
+	if changed {
+		s.o.Invalidate()
+	}
 }
 
 func (s *Store) refreshKeys() {
@@ -263,12 +300,18 @@ func (s *Store) refreshKeys() {
 		return
 	}
 	s.mu.Lock()
-	s.keys = keys
-	s.loaded[SourceKeys] = true
-	delete(s.errors, SourceKeys)
-	s.publishLocked()
+	changed := !reflect.DeepEqual(s.keys, keys)
+	if changed {
+		s.keys = keys
+	}
+	changed = s.markSourceSuccessLocked(SourceKeys) || changed
+	if changed {
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
+	if changed {
+		s.o.Invalidate()
+	}
 }
 
 func (s *Store) refreshReachability() {
@@ -276,25 +319,32 @@ func (s *Store) refreshReachability() {
 	reaches := s.o.Remote.PingAll(ctx)
 	consoleReaches := s.o.Console.ProbeAll(ctx)
 	s.mu.Lock()
+	changed := false
 	for _, reach := range reaches {
-		if server := s.servers[reach.Alias]; server != nil {
+		if server := s.servers[reach.Alias]; server != nil && (server.Reach == nil || *server.Reach != reach) {
 			copyValue := *server
 			value := reach
 			copyValue.Reach = &value
 			s.servers[reach.Alias] = &copyValue
+			changed = true
 		}
 	}
 	for _, reach := range consoleReaches {
-		if profile := s.consoles[reach.ID]; profile != nil {
+		if profile := s.consoles[reach.ID]; profile != nil && (profile.Reach == nil || *profile.Reach != reach) {
 			copyValue := *profile
 			value := reach
 			copyValue.Reach = &value
 			s.consoles[reach.ID] = &copyValue
+			changed = true
 		}
 	}
-	s.publishLocked()
+	if changed {
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
+	if changed {
+		s.o.Invalidate()
+	}
 }
 
 func (s *Store) refreshApps() {
@@ -304,16 +354,23 @@ func (s *Store) refreshApps() {
 		grouped[check.Alias] = append(grouped[check.Alias], check)
 	}
 	s.mu.Lock()
-	for alias, values := range grouped {
-		if server := s.servers[alias]; server != nil {
+	changed := false
+	for alias, server := range s.servers {
+		values := grouped[alias]
+		if !reflect.DeepEqual(server.Apps, values) {
 			copyValue := *server
 			copyValue.Apps = append([]remote.AppCheck(nil), values...)
 			s.servers[alias] = &copyValue
+			changed = true
 		}
 	}
-	s.publishLocked()
+	if changed {
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
+	if changed {
+		s.o.Invalidate()
+	}
 }
 
 func (s *Store) refreshPassthrough() {
@@ -324,33 +381,41 @@ func (s *Store) refreshPassthrough() {
 		return
 	}
 	result := make(map[string]*Passthrough, len(list.Machines))
+	sampled := make(map[string]bool, len(list.Machines))
 	for _, item := range list.Machines {
 		entry := &Passthrough{Machine: item}
-		s.mu.Lock()
-		if old := s.passthrough[item.Name]; old != nil {
-			entry.Stats = old.Stats
-		}
-		s.mu.Unlock()
 		if passthroughState(item.State) == model.StateRunning {
+			s.mu.Lock()
+			if old := s.passthrough[item.Name]; old != nil {
+				entry.Stats = old.Stats
+			}
+			s.mu.Unlock()
 			if stats, statsErr := passthrough.ReadStats(ctx, item.Name); statsErr == nil {
 				entry.Stats = &stats
+				sampled[item.Name] = stats.Running
 			}
 		}
 		result[item.Name] = entry
 	}
+	gpu := passthrough.Readiness{Ready: list.Ready, Blocker: list.Blocker}
 	s.mu.Lock()
-	s.passthrough = result
-	s.gpu = passthrough.Readiness{Ready: list.Ready, Blocker: list.Blocker}
-	s.loaded[SourcePassthrough] = true
-	delete(s.errors, SourcePassthrough)
-	for name, entry := range result {
-		if entry.Stats != nil {
-			s.pushPassthroughMetricsLocked(name, entry)
-		}
+	changed := !reflect.DeepEqual(s.passthrough, result) || s.gpu != gpu
+	if changed {
+		s.passthrough = result
+		s.gpu = gpu
 	}
-	s.publishLocked()
+	metricsChanged := false
+	for name := range sampled {
+		metricsChanged = s.pushPassthroughMetricsLocked(name, result[name]) || metricsChanged
+	}
+	changed = s.markSourceSuccessLocked(SourcePassthrough) || changed || metricsChanged
+	if changed {
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
+	if changed {
+		s.o.Invalidate()
+	}
 }
 
 func (s *Store) machineStatsLoop() {
@@ -433,13 +498,25 @@ func (s *Store) refreshMachineStats(name string) {
 		s.mu.Unlock()
 		return
 	}
-	copyValue := *machine
-	copyValue.Stats = &stats
-	s.machines[name] = &copyValue
-	s.pushMachineMetricsLocked(name, &copyValue)
-	s.publishLocked()
+	statsChanged := !reflect.DeepEqual(machine.Stats, &stats)
+	if statsChanged {
+		copyValue := *machine
+		copyValue.Stats = &stats
+		machine = &copyValue
+		s.machines[name] = machine
+	}
+	metricsChanged := false
+	if machine.Running && stats.Running {
+		metricsChanged = s.pushMachineMetricsLocked(name, machine)
+	}
+	changed := statsChanged || metricsChanged
+	if changed {
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
+	if changed {
+		s.o.Invalidate()
+	}
 }
 
 func (s *Store) refreshMachineAux(name string) {
@@ -451,19 +528,24 @@ func (s *Store) refreshMachineAux(name string) {
 	}
 	s.mu.Lock()
 	machine := s.machines[name]
+	changed := false
 	if machine != nil {
 		copyValue := *machine
-		if usbErr == nil {
+		if usbErr == nil && !reflect.DeepEqual(copyValue.USB, usb) {
 			copyValue.USB = usb
+			changed = true
 		}
-		if forwardErr == nil {
+		if forwardErr == nil && !reflect.DeepEqual(copyValue.Forwards, forwards) {
 			copyValue.Forwards = forwards
+			changed = true
 		}
-		s.machines[name] = &copyValue
-		s.publishLocked()
+		if changed {
+			s.machines[name] = &copyValue
+			s.publishLocked()
+		}
 	}
 	s.mu.Unlock()
-	if machine != nil {
+	if changed {
 		s.o.Invalidate()
 	}
 }
@@ -555,47 +637,72 @@ func (s *Store) refreshProbe(alias string) {
 	tunnels, _ := s.o.Remote.Tunnels(alias)
 	s.mu.Lock()
 	server = s.servers[alias]
+	changed := false
 	if server != nil {
 		copyValue := *server
-		copyValue.Probe = &probe
-		copyValue.Guests = guests
-		copyValue.Tunnels = tunnels
-		s.servers[alias] = &copyValue
-		s.pushServerMetricsLocked(alias, &copyValue)
-		s.publishLocked()
+		if !reflect.DeepEqual(server.Probe, &probe) {
+			copyValue.Probe = &probe
+			changed = true
+		}
+		if !reflect.DeepEqual(server.Guests, guests) {
+			copyValue.Guests = append([]remote.Guest(nil), guests...)
+			changed = true
+		}
+		if !reflect.DeepEqual(server.Tunnels, tunnels) {
+			copyValue.Tunnels = append([]remote.Tunnel(nil), tunnels...)
+			changed = true
+		}
+		if changed {
+			server = &copyValue
+			s.servers[alias] = server
+		}
+		metricsChanged := s.pushServerMetricsLocked(alias, server)
+		changed = changed || metricsChanged
+		if changed {
+			s.publishLocked()
+		}
 	}
 	s.mu.Unlock()
-	if server != nil {
+	if changed {
 		s.o.Invalidate()
+	}
+	if server != nil {
+		if slug := build.DistroSlug(probe.Distro); slug != "" {
+			s.resolveLogos([]string{slug})
+		}
 	}
 }
 
-func (s *Store) pushMachineMetricsLocked(name string, machine *Machine) {
+func (s *Store) pushMachineMetricsLocked(name string, machine *Machine) bool {
 	stats := machine.Stats
 	if stats == nil {
-		return
+		return false
 	}
 	id := model.NewID(model.KindMachine, name)
 	now := s.o.Now()
 	previous := s.counters[id]
+	samples := make([]metricSample, 0, 4)
 	if stats.HostCPUPct != nil {
 		value := *stats.HostCPUPct / 100
 		if stats.VCPUs != nil && *stats.VCPUs > 0 {
 			value /= float64(*stats.VCPUs)
 		}
-		s.pushMetricLocked(id, model.MetricCPU, clamp01(value), now)
+		samples = append(samples, metricSample{metric: model.MetricCPU, value: clamp01(value)})
 	}
 	if stats.HostRSSMB != nil {
 		if total := ramMB(machine.RAM); total > 0 {
-			s.pushMetricLocked(id, model.MetricMem, clamp01(float64(*stats.HostRSSMB)/float64(total)), now)
+			samples = append(samples, metricSample{metric: model.MetricMem, value: clamp01(float64(*stats.HostRSSMB) / float64(total))})
 		}
 	}
 	disk, net := qmpCounters(stats)
 	if !previous.at.IsZero() {
-		s.pushMetricLocked(id, model.MetricDisk, rate(now, disk, previous, previous.disk), now)
-		s.pushMetricLocked(id, model.MetricNet, rate(now, net, previous, previous.net), now)
+		samples = append(samples,
+			metricSample{metric: model.MetricDisk, value: rate(now, disk, previous, previous.disk)},
+			metricSample{metric: model.MetricNet, value: rate(now, net, previous, previous.net)},
+		)
 	}
 	s.counters[id] = counterSample{at: now, disk: disk, net: net}
+	return s.pushMetricsLocked(id, samples, now)
 }
 
 func qmpCounters(stats *qmp.Stats) (uint64, uint64) {
@@ -615,66 +722,85 @@ func qmpCounters(stats *qmp.Stats) (uint64, uint64) {
 	return disk, net
 }
 
-func (s *Store) pushServerMetricsLocked(alias string, server *Server) {
+func (s *Store) pushServerMetricsLocked(alias string, server *Server) bool {
 	probe := server.Probe
-	if probe == nil {
-		return
+	if probe == nil || !probe.OK {
+		return false
 	}
 	id := model.NewID(model.KindServer, alias)
 	now := s.o.Now()
-	s.pushMetricLocked(id, model.MetricCPU, clamp01(probe.CPUPercent/100), now)
+	samples := []metricSample{{metric: model.MetricCPU, value: clamp01(probe.CPUPercent / 100)}}
 	if probe.MemTotalKb > 0 {
-		s.pushMetricLocked(id, model.MetricMem, clamp01(1-float64(probe.MemAvailKb)/float64(probe.MemTotalKb)), now)
+		samples = append(samples, metricSample{metric: model.MetricMem, value: clamp01(1 - float64(probe.MemAvailKb)/float64(probe.MemTotalKb))})
 	}
 	disk := uint64(max(0, probe.DiskReadBytes) + max(0, probe.DiskWriteBytes))
 	net := uint64(max(0, probe.NetRxBytes) + max(0, probe.NetTxBytes))
 	previous := s.counters[id]
 	if !previous.at.IsZero() {
-		s.pushMetricLocked(id, model.MetricDisk, rate(now, disk, previous, previous.disk), now)
-		s.pushMetricLocked(id, model.MetricNet, rate(now, net, previous, previous.net), now)
+		samples = append(samples,
+			metricSample{metric: model.MetricDisk, value: rate(now, disk, previous, previous.disk)},
+			metricSample{metric: model.MetricNet, value: rate(now, net, previous, previous.net)},
+		)
 	}
 	s.counters[id] = counterSample{at: now, disk: disk, net: net}
+	return s.pushMetricsLocked(id, samples, now)
 }
 
-func (s *Store) pushPassthroughMetricsLocked(name string, machine *Passthrough) {
+func (s *Store) pushPassthroughMetricsLocked(name string, machine *Passthrough) bool {
 	stats := machine.Stats
-	if stats == nil {
-		return
+	if stats == nil || !stats.Running {
+		return false
 	}
 	id := model.NewID(model.KindPassthrough, name)
 	now := s.o.Now()
 	previous := s.counters[id]
+	samples := make([]metricSample, 0, 4)
 	if !previous.at.IsZero() {
 		seconds := now.Sub(previous.at).Seconds()
 		if seconds > 0 && stats.CPUTimeNS >= previous.cpuTime && machine.VCPUs > 0 {
 			cpu := float64(stats.CPUTimeNS-previous.cpuTime) / (seconds * float64(time.Second) * float64(machine.VCPUs))
-			s.pushMetricLocked(id, model.MetricCPU, clamp01(cpu), now)
+			samples = append(samples, metricSample{metric: model.MetricCPU, value: clamp01(cpu)})
 		}
 	}
 	if machine.RAMMB > 0 {
-		s.pushMetricLocked(id, model.MetricMem, clamp01(float64(stats.MemoryKB)/float64(machine.RAMMB*1024)), now)
+		samples = append(samples, metricSample{metric: model.MetricMem, value: clamp01(float64(stats.MemoryKB) / float64(machine.RAMMB*1024))})
 	}
 	disk := stats.DiskReadBytes + stats.DiskWriteBytes
 	net := stats.NetReceiveBytes + stats.NetSendBytes
 	if !previous.at.IsZero() {
-		s.pushMetricLocked(id, model.MetricDisk, rate(now, disk, previous, previous.disk), now)
-		s.pushMetricLocked(id, model.MetricNet, rate(now, net, previous, previous.net), now)
+		samples = append(samples,
+			metricSample{metric: model.MetricDisk, value: rate(now, disk, previous, previous.disk)},
+			metricSample{metric: model.MetricNet, value: rate(now, net, previous, previous.net)},
+		)
 	}
 	s.counters[id] = counterSample{at: now, disk: disk, net: net, cpuTime: stats.CPUTimeNS}
+	return s.pushMetricsLocked(id, samples, now)
 }
 
-func (s *Store) pushMetricLocked(id model.ID, metric model.Metric, value float64, now time.Time) {
-	metrics := s.metrics[id]
-	if metrics == nil {
-		metrics = make(map[model.Metric]*model.Series)
-		s.metrics[id] = metrics
+type metricSample struct {
+	metric model.Metric
+	value  float64
+}
+
+func (s *Store) pushMetricsLocked(id model.ID, samples []metricSample, now time.Time) bool {
+	if len(samples) == 0 {
+		return false
 	}
-	series := metrics[metric]
-	if series == nil {
-		series = model.NewSeries(150)
-		metrics[metric] = series
+	metrics := cloneMap(s.metrics[id])
+	for _, sample := range samples {
+		series := metrics[sample.metric]
+		if series == nil {
+			series = model.NewSeries(150)
+		} else {
+			series = series.Clone()
+		}
+		series.Push(sample.value, now)
+		metrics[sample.metric] = series
 	}
-	series.Push(value, now)
+	all := cloneMap(s.metrics)
+	all[id] = metrics
+	s.metrics = all
+	return true
 }
 
 func ramMB(value string) int {
@@ -802,11 +928,27 @@ func (s *Store) watchVMRoot() {
 
 func (s *Store) setSourceError(source Source, err error) {
 	s.mu.Lock()
-	s.loaded[source] = true
-	s.errors[source] = firstLine(err)
-	s.publishLocked()
+	text := firstLine(err)
+	changed := !s.loaded[source] || s.errors[source] != text
+	if changed {
+		s.loaded[source] = true
+		s.errors[source] = text
+		s.publishLocked()
+	}
 	s.mu.Unlock()
-	s.o.Invalidate()
+	if changed {
+		s.o.Invalidate()
+	}
+}
+
+func (s *Store) markSourceSuccessLocked(source Source) bool {
+	changed := !s.loaded[source]
+	if _, ok := s.errors[source]; ok {
+		changed = true
+	}
+	s.loaded[source] = true
+	delete(s.errors, source)
+	return changed
 }
 
 func (s *Store) currentContext() context.Context {

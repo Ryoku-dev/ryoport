@@ -30,6 +30,44 @@ var simpleIconAliases = map[string]string{
 	"lmde": "linuxmint", "windows": "", "windows-server": "",
 }
 
+var distroSlugs = [...]struct {
+	prefix string
+	slug   string
+}{
+	{"arch linux", "archlinux"},
+	{"ubuntu", "ubuntu"},
+	{"debian", "debian"},
+	{"fedora", "fedora"},
+	{"linux mint", "linuxmint"},
+	{"alpine", "alpine"},
+	{"centos", "centos-stream"},
+	{"rocky", "rockylinux"},
+	{"almalinux", "alma"},
+	{"opensuse", "opensuse"},
+	{"nixos", "nixos"},
+	{"void", "void"},
+	{"gentoo", "gentoo"},
+	{"manjaro", "manjaro"},
+	{"pop!_os", "popos"},
+	{"kali", "kali"},
+	{"proxmox", "proxmox-ve"},
+	{"endeavouros", "endeavouros"},
+	{"cachyos", "cachyos"},
+	{"elementary", "elementary"},
+	{"zorin", "zorin"},
+}
+
+// DistroSlug maps an os-release display name to the catalogue logo slug.
+func DistroSlug(distro string) string {
+	name := strings.ToLower(strings.TrimSpace(distro))
+	for _, candidate := range distroSlugs {
+		if strings.HasPrefix(name, candidate.prefix) {
+			return candidate.slug
+		}
+	}
+	return ""
+}
+
 // Icon resolves and caches a logo for one catalogue OS.
 func (b *Builder) Icon(ctx context.Context, osName string) (string, error) {
 	if !iconSlug.MatchString(osName) {
