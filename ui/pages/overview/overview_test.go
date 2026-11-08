@@ -24,7 +24,7 @@ func TestLatencyRadiusIsMonotonicAndInsideOuterRing(t *testing.T) {
 
 func TestLatencyRadiusQuantizesNearbyReadings(t *testing.T) {
 	const oneMS, outer = 120.0, 280.0
-	for _, pair := range [][2]int{{1, 2}, {3, 4}} {
+	for _, pair := range [][2]int{{1, 2}, {2, 3}} {
 		a, b := latencyRadius(pair[0], oneMS, outer), latencyRadius(pair[1], oneMS, outer)
 		if a != b {
 			t.Fatalf("%d ms and %d ms should share a radius band: %.2f and %.2f", pair[0], pair[1], a, b)
@@ -36,13 +36,13 @@ func TestLatencyBandHysteresis(t *testing.T) {
 	var band, center float64
 	var set bool
 	var initial float64
-	for i, rtt := range []int{41, 59, 44, 57} {
+	for i, rtt := range []float64{41, 59, 44, 57} {
 		band, center = hystereticLatencyBand(rtt, band, center, set)
 		set = true
 		if i == 0 {
 			initial = band
 		} else if band != initial {
-			t.Fatalf("%d ms moved from jitter band %.2f to %.2f", rtt, initial, band)
+			t.Fatalf("%.1f ms moved from jitter band %.2f to %.2f", rtt, initial, band)
 		}
 	}
 
@@ -50,6 +50,27 @@ func TestLatencyBandHysteresis(t *testing.T) {
 	moved, _ := hystereticLatencyBand(300, start, startCenter, true)
 	if moved == start {
 		t.Fatalf("41 ms to 300 ms stayed in band %.2f", start)
+	}
+}
+
+func TestLowLatencyBandHysteresis(t *testing.T) {
+	var band, center float64
+	var set bool
+	var initial float64
+	for i, rtt := range []float64{0.3, 2.1, 0.4, 3.0, 0.9} {
+		band, center = hystereticLatencyBand(rtt, band, center, set)
+		set = true
+		if i == 0 {
+			initial = band
+		} else if band != initial {
+			t.Fatalf("%.1f ms moved from low-latency band %.2f to %.2f", rtt, initial, band)
+		}
+	}
+
+	start, startCenter := hystereticLatencyBand(0.4, 0, 0, false)
+	moved, _ := hystereticLatencyBand(40, start, startCenter, true)
+	if moved == start {
+		t.Fatalf("0.4 ms to 40 ms stayed in band %.2f", start)
 	}
 }
 

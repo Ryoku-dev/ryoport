@@ -52,7 +52,7 @@ type boxGroup struct {
 }
 
 func latencyRadius(rtt int, oneMS, outer float64) float64 {
-	return latencyRadiusForBand(quantizedLatencyBand(latencyLog(rtt)), oneMS, outer)
+	return latencyRadiusForBand(quantizedLatencyBand(latencyLog(float64(rtt))), oneMS, outer)
 }
 
 func latencyRadiusForBand(band, oneMS, outer float64) float64 {
@@ -68,9 +68,9 @@ func latencyRadiusForBand(band, oneMS, outer float64) float64 {
 	return oneMS + (limit-oneMS)*decades
 }
 
-func latencyLog(rtt int) float64 {
-	ms := float64(max(1, rtt))
-	if ms <= 2 {
+func latencyLog(rtt float64) float64 {
+	ms := max(1, rtt)
+	if ms <= 3 {
 		return 0
 	}
 	return math.Log10(ms)
@@ -80,9 +80,13 @@ func quantizedLatencyBand(raw float64) float64 {
 	return max(0, min(2, math.Round(raw/0.25)*0.25))
 }
 
-func hystereticLatencyBand(rtt int, band, center float64, set bool) (float64, float64) {
+func hystereticLatencyBand(rtt, band, center float64, set bool) (float64, float64) {
 	raw := latencyLog(rtt)
-	if !set || math.Abs(raw-center) > 0.25 {
+	width := 0.25
+	if max(1, rtt) < 10 {
+		width = 0.5
+	}
+	if !set || math.Abs(raw-center) > width {
 		return quantizedLatencyBand(raw), raw
 	}
 	return band, center

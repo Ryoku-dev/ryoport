@@ -57,7 +57,7 @@ func (v *View) layoutMap(gtx layout.Context, e *env.Env, reveal float32) layout.
 		node := nodes[nodePlacement.Index]
 		seen[node.ID] = true
 		motion := v.nodeMotionFor(node.ID)
-		point := resolveNodePoint(gtx, motion, nodePlacement.Point)
+		point := resolveNodePoint(gtx, motion, nodePlacement.Point, node.Tone)
 		click := v.nodeClicks[node.ID]
 		if click == nil {
 			click = new(widget.Clickable)
@@ -99,7 +99,7 @@ func (v *View) stabilizeLatencyBands(nodes []mapNode) {
 		}
 		motion := v.nodeMotionFor(nodes[i].ID)
 		motion.latencyBand, motion.latencyCenter = hystereticLatencyBand(
-			nodes[i].RTTMs,
+			float64(nodes[i].RTTMs),
 			motion.latencyBand,
 			motion.latencyCenter,
 			motion.latencySet,
@@ -110,28 +110,31 @@ func (v *View) stabilizeLatencyBands(nodes []mapNode) {
 	}
 }
 
-func resolveNodePoint(gtx layout.Context, motion *pointMotion, target image.Point) image.Point {
+func resolveNodePoint(gtx layout.Context, motion *pointMotion, target image.Point, tone model.Tone) image.Point {
 	if !motion.initialized {
+		settle := gtx.Dp(unit.Dp(6))
 		motion.x.Snap(float32(target.X))
-		motion.y.Snap(float32(target.Y))
+		motion.y.Snap(float32(target.Y + settle))
+		motion.y.Set(float32(target.Y))
 		motion.target = target
-		motion.current = target
+		motion.current = image.Pt(target.X, target.Y+settle)
+		motion.tone = tone
 		motion.initialized = true
-		return target
-	}
-
-	distance := math.Hypot(float64(target.X-motion.target.X), float64(target.Y-motion.target.Y))
-	keep, animate := float64(gtx.Dp(unit.Dp(4))), float64(gtx.Dp(unit.Dp(6)))
-	if distance > keep {
-		motion.target = target
-		if distance < animate {
+	} else {
+		stateChanged := tone != motion.tone
+		if target != motion.target {
 			motion.x.Snap(float32(target.X))
 			motion.y.Snap(float32(target.Y))
+			motion.target = target
 			motion.current = target
-		} else {
-			motion.x.Set(float32(target.X))
-			motion.y.Set(float32(target.Y))
 		}
+		if stateChanged {
+			settle := gtx.Dp(unit.Dp(3))
+			motion.y.Snap(float32(target.Y + settle))
+			motion.y.Set(float32(target.Y))
+			motion.current.Y = target.Y + settle
+		}
+		motion.tone = tone
 	}
 	if motion.x.Moving() {
 		motion.current.X = int(math.Round(float64(motion.x.Value(gtx))))

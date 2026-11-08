@@ -40,6 +40,7 @@ type pointMotion struct {
 	current       image.Point
 	latencyBand   float64
 	latencyCenter float64
+	tone          model.Tone
 	initialized   bool
 	latencySet    bool
 }
