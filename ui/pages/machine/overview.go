@@ -245,11 +245,10 @@ func (v *View) layoutReadings(gtx layout.Context, e *env.Env, resource model.Res
 }
 
 func (v *View) layoutStoppedOverview(gtx layout.Context, e *env.Env, resource model.Resource, machine *store.Machine) layout.Dimensions {
-	last := "Last used time is not available."
+	copy := "Not running, so it holds no memory and draws no power."
 	if at, ok := transitionAt(e.Snap.Events, resource.ID, "Stopped "+resource.Name); ok {
-		last = "Last used " + format.Ago(at, e.Now) + "."
+		copy = "Last used " + format.Ago(at, e.Now) + ". Not running, so it holds no memory and draws no power."
 	}
-	copy := last + " The machine is not drawing power or using memory."
 	facts := []kit.Fact{
 		{Label: "Processor", Value: machine.Cores + " " + pluralString(machine.Cores, "core", "cores"), Mono: true},
 		{Label: "Memory", Value: displaySize(machine.RAM), Mono: true},

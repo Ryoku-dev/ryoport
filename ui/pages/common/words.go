@@ -56,7 +56,7 @@ func StateWords(e *env.Env, r model.Resource) (claim, proof string) {
 		case model.StateStopped:
 			return "Stopped", ""
 		case model.StateAbsent:
-			return "Missing", ""
+			return "Not installed", ""
 		default:
 			return r.State.Label(), ""
 		}

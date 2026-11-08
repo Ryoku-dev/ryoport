@@ -210,7 +210,7 @@ func (s *shell) compactWorkPage(e *env.Env) layout.Widget {
 	page := s.workPage(e)
 	return func(gtx layout.Context) layout.Dimensions {
 		if s.compactBack.Clicked(gtx) {
-			e.Nav.Back(env.Compact)
+			e.Nav.Back()
 			gtx.Execute(op.InvalidateCmd{})
 		}
 		return (layout.Flex{Axis: layout.Vertical}).Layout(gtx,

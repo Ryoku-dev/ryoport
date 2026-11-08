@@ -105,7 +105,7 @@ func (keys) Layout(gtx layout.Context, e *env.Env, shell *shell) {
 			e.Ops.Refresh()
 		case shortcutBack:
 			if !shell.rail.CloseNew() {
-				e.Nav.Back(e.Class)
+				e.Nav.Back()
 			}
 		case shortcutQuit:
 			shell.window.Perform(system.ActionClose)

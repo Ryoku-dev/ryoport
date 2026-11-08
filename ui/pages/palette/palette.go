@@ -129,7 +129,7 @@ func (p *Palette) handleKeys(gtx layout.Context, e *env.Env, results []int) (int
 				return results[p.selected], true, false
 			}
 		case key.NameEscape:
-			e.Nav.Back(e.Class)
+			e.Nav.Back()
 			return 0, false, true
 		}
 	}

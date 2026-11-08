@@ -95,7 +95,7 @@ func (s State) Label() string {
 	case StateCreating:
 		return "Creating"
 	case StateAbsent:
-		return "Missing"
+		return "Not installed"
 	case StateOnline:
 		return "Online"
 	case StateOffline:

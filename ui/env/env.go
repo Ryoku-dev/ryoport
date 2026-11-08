@@ -138,10 +138,10 @@ func (n *Nav) Open(d Draft) {
 
 func (n *Nav) CloseDraft() { n.Draft = Draft{} }
 
-// Back undoes one level: an overlay, a draft, the create page, then on a
-// compact window the detail pane. It reports false when there was nothing to
-// go back from.
-func (n *Nav) Back(c Class) bool {
+// Back undoes one level: an overlay, a draft, the create page, then the
+// detail pane, which leaves the overview (or, on a compact window, the list).
+// It reports false when there was nothing to go back from.
+func (n *Nav) Back() bool {
 	switch {
 	case n.Confirm != nil:
 		n.Confirm = nil
@@ -151,7 +151,7 @@ func (n *Nav) Back(c Class) bool {
 		n.Draft = Draft{}
 	case n.Page != store.PageFleet:
 		n.Page = store.PageFleet
-	case c == Compact && n.Selected != "":
+	case n.Selected != "":
 		n.Selected = ""
 	default:
 		return false
