@@ -52,9 +52,9 @@ prepare() {
   rm -rf "$srcdir/ryoport"
   mkdir -p "$srcdir/ryoport"
   tar \
-    --exclude='.git' \
-    --exclude='build' \
-    --exclude='dist' \
+    --exclude='./.git' \
+    --exclude='./build' \
+    --exclude='./dist' \
     --exclude='./packaging/arch/pkg' \
     --exclude='./packaging/arch/src' \
     --exclude='./packaging/arch/*.pkg.tar.*' \
