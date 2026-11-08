@@ -1,14 +1,13 @@
 package kit
 
 import (
-	"fmt"
 	"image"
+	"math"
 	"testing"
 
+	"gioui.org/f32"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/unit"
-	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
 func testContext(width, height int) layout.Context {
@@ -18,17 +17,54 @@ func testContext(width, height int) layout.Context {
 	}
 }
 
-func TestRadius(t *testing.T) {
-	gtx := testContext(100, 40)
-	if got := Radius(gtx, theme.Full, 40); got != 20 {
-		t.Fatalf("full radius = %d, want 20", got)
+func TestCutPoints(t *testing.T) {
+	got := cutPoints(image.Rect(10, 20, 110, 70), 5, 10, 15, 20)
+	want := [...]f32.Point{
+		f32.Pt(15, 20),
+		f32.Pt(100, 20),
+		f32.Pt(110, 30),
+		f32.Pt(110, 55),
+		f32.Pt(95, 70),
+		f32.Pt(30, 70),
+		f32.Pt(10, 50),
+		f32.Pt(10, 25),
 	}
-	if got := Radius(gtx, unit.Dp(12), 40); got != 12 {
-		t.Fatalf("fixed radius = %d, want 12", got)
+	if got != want {
+		t.Fatalf("cut points = %v, want %v", got, want)
 	}
 }
 
-func TestColumnsChoosesFittingCount(t *testing.T) {
+func TestBladePoints(t *testing.T) {
+	got := bladePoints(image.Rect(0, 0, 100, 6))
+	want := [...]f32.Point{
+		f32.Pt(0, 0),
+		f32.Pt(94, 0),
+		f32.Pt(100, 6),
+		f32.Pt(0, 6),
+	}
+	if got != want {
+		t.Fatalf("blade points = %v, want %v", got, want)
+	}
+}
+
+func TestOctagonPoints(t *testing.T) {
+	points := OctagonPoints(f32.Pt(4, 7), 10)
+	if len(points) != 8 {
+		t.Fatalf("octagon has %d vertices, want 8", len(points))
+	}
+	if points[0].Y != -3 || points[1].Y != -3 {
+		t.Fatalf("top side is at %v and %v, want apothem y -3", points[0].Y, points[1].Y)
+	}
+	if points[2].X != 14 || points[3].X != 14 {
+		t.Fatalf("right side is at %v and %v, want apothem x 14", points[2].X, points[3].X)
+	}
+	wantOffset := 10 * math.Tan(math.Pi/8)
+	if math.Abs(float64(points[1].X-4)-wantOffset) > 0.0001 {
+		t.Fatalf("vertex offset = %v, want %v", points[1].X-4, wantOffset)
+	}
+}
+
+func TestColumnCount(t *testing.T) {
 	tests := []struct {
 		width int
 		want  int
@@ -38,20 +74,9 @@ func TestColumnsChoosesFittingCount(t *testing.T) {
 		{width: 320, want: 3},
 	}
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("width_%d", test.width), func(t *testing.T) {
-			gtx := testContext(test.width, 200)
-			firstWidth := 0
-			Columns(gtx, 96, 8, 6, func(gtx layout.Context, i int) layout.Dimensions {
-				if i == 0 {
-					firstWidth = gtx.Constraints.Min.X
-				}
-				return layout.Dimensions{Size: image.Pt(gtx.Constraints.Min.X, 20)}
-			})
-			got := (test.width + 8) / (firstWidth + 8)
-			if got != test.want {
-				t.Fatalf("first row has %d columns, want %d", got, test.want)
-			}
-		})
+		if got := columnCount(test.width, 96, 8, 6); got != test.want {
+			t.Errorf("columnCount(%d) = %d, want %d", test.width, got, test.want)
+		}
 	}
 }
 
@@ -66,15 +91,23 @@ func TestStepperClamp(t *testing.T) {
 	if s.Value != 2 {
 		t.Fatalf("low value clamped to %d, want 2", s.Value)
 	}
+	s.Min, s.Max, s.Value = 7, 3, 5
+	s.clamp()
+	if s.Max != 7 || s.Value != 7 {
+		t.Fatalf("inverted range clamped to max=%d value=%d, want 7 and 7", s.Max, s.Value)
+	}
 }
 
-func TestButtonGroupChange(t *testing.T) {
+func TestFiltersChanged(t *testing.T) {
 	gtx := testContext(200, 40)
-	var g ButtonGroup
-	g.ensure(3)
-	g.buttons[1].Click()
-	got, ok := g.Changed(gtx)
+	var filters Filters
+	filters.ensure(3)
+	filters.buttons[1].Click()
+	got, ok := filters.Changed(gtx)
 	if !ok || got != 1 {
 		t.Fatalf("Changed() = %d, %v; want 1, true", got, ok)
+	}
+	if _, ok := filters.Changed(gtx); ok {
+		t.Fatal("Changed() reported the same change twice")
 	}
 }

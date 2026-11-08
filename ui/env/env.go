@@ -103,9 +103,11 @@ type Nav struct {
 	focusSearch bool
 }
 
+// Go changes page, closing the palette and any draft.
 func (n *Nav) Go(p store.Page) {
 	n.Page = p
 	n.Palette = false
+	n.Draft = Draft{}
 }
 
 // Select shows a resource in the detail pane, closing any draft.
@@ -180,15 +182,15 @@ type Files interface {
 }
 
 type Env struct {
-	Th    *theme.Theme
-	Snap  *store.Snapshot
-	Ops   store.Ops
-	Nav   *Nav
-	Logos *kit.Logos
-	Toast *kit.Toasts
-	Class Class
-	Now   time.Time
-	Files Files
+	Th       *theme.Theme
+	Snap     *store.Snapshot
+	Ops      store.Ops
+	Nav      *Nav
+	Logos    *kit.Logos
+	Placards *kit.Placards
+	Class    Class
+	Now      time.Time
+	Files    Files
 	// Post runs f on the UI goroutine before the next frame and wakes the window.
 	Post func(f func())
 }

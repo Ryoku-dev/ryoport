@@ -3,10 +3,13 @@ package kit
 import (
 	"image"
 
+	"gioui.org/f32"
 	"gioui.org/io/key"
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/widget"
 	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/theme"
@@ -14,7 +17,8 @@ import (
 
 type Tabs struct {
 	tabs     []widget.Clickable
-	x, width anim.Spring
+	widths   []int
+	x, width anim.Tween
 	changed  int
 	pending  bool
 }
@@ -62,62 +66,86 @@ func (t *Tabs) Changed(gtx layout.Context) (int, bool) {
 	if !t.pending {
 		return 0, false
 	}
-	i := t.changed
+	changed := t.changed
 	t.pending = false
-	return i, true
+	return changed, true
+}
+
+func tabBladePoints(r image.Rectangle) [4]f32.Point {
+	cut := min(max(0, r.Dy()), max(0, r.Dx()/2))
+	return [4]f32.Point{
+		f32.Pt(float32(r.Min.X+cut), float32(r.Min.Y)),
+		f32.Pt(float32(r.Max.X), float32(r.Min.Y)),
+		f32.Pt(float32(r.Max.X-cut), float32(r.Max.Y)),
+		f32.Pt(float32(r.Min.X), float32(r.Max.Y)),
+	}
 }
 
 func (t *Tabs) Layout(gtx layout.Context, th *theme.Theme, labels []string, selected int) layout.Dimensions {
 	t.ensure(len(labels))
 	t.poll(gtx)
-	h := gtx.Dp(36)
-	widths := make([]int, len(labels))
-	total := 0
-	for i, label := range labels {
-		m := op.Record(gtx.Ops)
-		d := Label{Style: th.T.Label, Color: th.R.Ink, MaxLines: 1}.Layout(gtx, th, label)
-		m.Stop()
-		widths[i] = d.Size.X + gtx.Dp(24)
-		total += widths[i]
-	}
 	if len(labels) == 0 {
 		return layout.Dimensions{}
 	}
 	selected = min(max(selected, 0), len(labels)-1)
+	h := gtx.Dp(44)
+	if cap(t.widths) < len(labels) {
+		t.widths = make([]int, len(labels))
+	} else {
+		t.widths = t.widths[:len(labels)]
+	}
+	total := 0
+	for i, label := range labels {
+		measureGTX := gtx
+		measureGTX.Constraints.Min = image.Point{}
+		m := op.Record(gtx.Ops)
+		dims := Label{Style: th.T.Label, Color: th.R.Fg, MaxLines: 1}.Layout(measureGTX, th, label)
+		m.Stop()
+		t.widths[i] = dims.Size.X + gtx.Dp(24)
+		total += t.widths[i]
+	}
 	targetX := 0
 	for i := range selected {
-		targetX += widths[i]
+		targetX += t.widths[i]
 	}
-	t.x.Omega, t.width.Omega = 22, 22
-	t.x.Set(float32(targetX))
-	t.width.Set(float32(widths[selected]))
+	t.x.Duration, t.width.Duration = th.Motion.Select, th.Motion.Select
+	t.x.Ease, t.width.Ease = anim.EaseChisel, anim.EaseChisel
+	t.x.Set(gtx, float32(targetX))
+	t.width.Set(gtx, float32(t.widths[selected]))
 	indicatorX := int(t.x.Value(gtx) + 0.5)
 	indicatorW := int(t.width.Value(gtx) + 0.5)
-	FillRect(gtx.Ops, image.Rect(indicatorX, 0, indicatorX+indicatorW, h), h/2, disabledInk(gtx, th.R.Selected))
+
+	lineHeight := max(1, gtx.Dp(1))
+	baseY := h - lineHeight
+	FillCut(gtx.Ops, image.Rect(0, baseY, total, h), 0, disabledInk(gtx, th.R.Vein))
+	bladeHeight := max(1, gtx.Dp(3))
+	bladeRect := image.Rect(indicatorX, h-bladeHeight, indicatorX+indicatorW, h)
+	points := tabBladePoints(bladeRect)
+	paint.FillShape(gtx.Ops, disabledInk(gtx, th.R.Fg), clip.Outline{Path: pathFromPoints(gtx.Ops, points[:])}.Op())
 
 	x := 0
 	for i, label := range labels {
 		i, label := i, label
-		w := widths[i]
-		off := op.Offset(image.Pt(x, 0)).Push(gtx.Ops)
-		tabGTX := exact(gtx, image.Pt(w, h))
+		width := t.widths[i]
+		offset := op.Offset(image.Pt(x, 0)).Push(gtx.Ops)
+		tabGTX := exact(gtx, image.Pt(width, h))
 		dims := t.tabs[i].Layout(tabGTX, func(gtx layout.Context) layout.Dimensions {
 			semantic.Button.Add(gtx.Ops)
 			semantic.LabelOp(label).Add(gtx.Ops)
 			semantic.SelectedOp(i == selected).Add(gtx.Ops)
-			if t.tabs[i].Hovered() && i != selected {
-				FillRect(gtx.Ops, image.Rect(0, 0, w, h), h/2, disabledInk(gtx, theme.WithAlpha(th.R.Ink, 0.08)))
+			ink := th.R.Fg3
+			if i == selected {
+				ink = th.R.Fg
+			} else if t.tabs[i].Hovered() {
+				ink = th.R.Fg2
 			}
-			if t.tabs[i].Pressed() {
-				FillRect(gtx.Ops, image.Rect(0, 0, w, h), h/2, disabledInk(gtx, theme.WithAlpha(th.R.Ink, 0.12)))
-			}
-			return layout.Center.Layout(gtx, Text(th, th.T.Label, disabledInk(gtx, th.R.Ink), label))
+			return layout.Center.Layout(gtx, Text(th, th.T.Label, disabledInk(gtx, ink), label))
 		})
 		if gtx.Focused(&t.tabs[i]) {
-			FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, h/2)
+			FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, 0)
 		}
-		off.Pop()
-		x += w
+		offset.Pop()
+		x += width
 	}
-	return layout.Dimensions{Size: gtx.Constraints.Constrain(image.Pt(total, h))}
+	return layout.Dimensions{Size: constrainMax(gtx, image.Pt(total, h))}
 }

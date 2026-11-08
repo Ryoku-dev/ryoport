@@ -2,10 +2,12 @@ package kit
 
 import (
 	"image"
+	"image/color"
 
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"github.com/ryoku-dev/ryoport/ui/anim"
@@ -15,17 +17,70 @@ import (
 type ButtonKind int
 
 const (
-	Filled ButtonKind = iota
-	Tonal
-	Outlined
-	TextButton
+	Gold ButtonKind = iota
+	Line
+	Quiet
+	On
 	Danger
+	DangerLine
 )
+
+type buttonColors struct {
+	fill, ink, outline color.NRGBA
+	stroke             bool
+}
+
+func colorsFor(th *theme.Theme, kind ButtonKind) buttonColors {
+	clear := color.NRGBA{}
+	switch kind {
+	case Line:
+		return buttonColors{fill: clear, ink: th.R.GoldInk, outline: th.R.GoldInk, stroke: true}
+	case Quiet:
+		return buttonColors{fill: clear, ink: th.R.Fg2, outline: th.R.Vein, stroke: true}
+	case On:
+		return buttonColors{fill: th.R.Sel, ink: th.R.OnSel}
+	case Danger:
+		return buttonColors{fill: th.R.Jasper, ink: color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}}
+	case DangerLine:
+		return buttonColors{fill: clear, ink: th.R.Jasper, outline: th.R.Jasper, stroke: true}
+	default:
+		return buttonColors{fill: th.R.Gold, ink: th.R.OnGold}
+	}
+}
+
+func normalInteractiveColors(th *theme.Theme, kind ButtonKind, hovered bool) buttonColors {
+	p := colorsFor(th, kind)
+	if hovered {
+		if p.fill.A == 0 {
+			p.fill = theme.WithAlpha(p.ink, 0.10)
+		} else {
+			p.fill = theme.Mix(p.fill, color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}, 0.10)
+		}
+	}
+	return p
+}
+
+func interactiveColors(gtx layout.Context, th *theme.Theme, kind ButtonKind, hovered bool) buttonColors {
+	p := normalInteractiveColors(th, kind, hovered && gtx.Source.Enabled())
+	p.fill = disabledInk(gtx, p.fill)
+	p.ink = disabledInk(gtx, p.ink)
+	p.outline = disabledInk(gtx, p.outline)
+	return p
+}
+
+func drawButtonSurface(gtx layout.Context, th *theme.Theme, r image.Rectangle, cut int, kind ButtonKind, hovered bool) color.NRGBA {
+	p := interactiveColors(gtx, th, kind, hovered)
+	FillCut(gtx.Ops, r, cut, p.fill)
+	if p.stroke {
+		StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), p.outline)
+	}
+	return p.ink
+}
 
 type Button struct {
 	widget.Clickable
 	Small, Busy bool
-	squeeze     anim.Spring
+	press       anim.Tween
 	width       int
 }
 
@@ -39,100 +94,85 @@ func (b *Button) Clicked(gtx layout.Context) bool {
 }
 
 func (b *Button) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind, icon *widget.Icon, label string) layout.Dimensions {
-	height := unit.Dp(40)
+	height, side, iconSize, gap, baseCut := unit.Dp(40), unit.Dp(18), unit.Dp(19), unit.Dp(8), th.Cut.Mid
 	if b.Small {
-		height = 32
+		height, side, iconSize, gap, baseCut = 32, 13, 17, 6, th.Cut.Small
 	}
 	h := gtx.Dp(height)
-	interactionGTX := gtx
+	original := gtx
+	interaction := gtx
 	if b.Busy {
-		interactionGTX = interactionGTX.Disabled()
+		interaction = interaction.Disabled()
 	}
-	renderGTX := gtx
-	radius := h / 2
-	dims := b.Clickable.Layout(interactionGTX, func(gtx layout.Context) layout.Dimensions {
-		gtx.Source = renderGTX.Source
+
+	var finalCut int
+	dims := b.Clickable.Layout(interaction, func(gtx layout.Context) layout.Dimensions {
+		gtx.Source = original.Source
 		semantic.Button.Add(gtx.Ops)
 		semantic.LabelOp(label).Add(gtx.Ops)
-		b.squeeze.Omega = 30
-		if b.Pressed() && !b.Busy {
-			b.squeeze.Set(float32(gtx.Dp(th.Shape.M)))
+
+		b.press.Duration = th.Motion.Press
+		b.press.Ease = anim.EaseChisel
+		if b.Pressed() && !b.Busy && original.Source.Enabled() {
+			b.press.Set(gtx, 1)
 		} else {
-			b.squeeze.Set(float32(h / 2))
+			b.press.Set(gtx, 0)
 		}
-		radius = int(b.squeeze.Value(gtx) + 0.5)
+		pressed := b.press.Value(gtx)
+		finalCut = gtx.Dp(baseCut) + int(float32(gtx.Dp(4))*pressed+0.5)
+		sink := int(float32(gtx.Dp(1))*pressed + 0.5)
 
-		bg, ink := th.R.Bone, th.R.OnBone
-		switch kind {
-		case Tonal:
-			bg, ink = th.R.Raised, th.R.Ink
-		case Outlined:
-			bg, ink = theme.WithAlpha(th.R.Bg, 0), th.R.Ink
-		case TextButton:
-			bg, ink = theme.WithAlpha(th.R.Bg, 0), th.R.Ink
-		case Danger:
-			ink = th.R.Bg
-			if th.R.Dark {
-				ink = th.R.Bone
-			}
-			bg = th.R.Bad
-		}
-		if b.Hovered() && !b.Busy {
-			if kind == TextButton || kind == Outlined {
-				bg = theme.WithAlpha(th.R.Ink, 0.08)
-			} else {
-				bg = theme.Mix(bg, ink, 0.08)
-			}
-		}
-		if b.Pressed() && !b.Busy {
-			if kind == TextButton || kind == Outlined {
-				bg = theme.WithAlpha(th.R.Ink, 0.12)
-			} else {
-				bg = theme.Mix(bg, ink, 0.12)
-			}
-		}
-		bg, ink = disabledInk(gtx, bg), disabledInk(gtx, ink)
-
+		palette := normalInteractiveColors(th, kind, b.Hovered() && !b.Busy && original.Source.Enabled())
+		contentGTX := gtx
+		contentGTX.Constraints.Min = image.Point{}
+		contentGTX.Constraints.Max.Y = h
 		m := op.Record(gtx.Ops)
-		content := layout.Inset{Left: 16, Right: 16}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			labelWidget := Text(th, th.T.Label, ink, label)
+		content := layout.Inset{Left: side, Right: side}.Layout(contentGTX, func(gtx layout.Context) layout.Dimensions {
+			children := make([]layout.FlexChild, 0, 3)
 			if b.Busy {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return LoadingIndicator(gtx, th, 18) }),
-					layout.Rigid(layout.Spacer{Width: 8}.Layout),
-					layout.Rigid(labelWidget),
+				children = append(children,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return Working(gtx, th, iconSize) }),
+					layout.Rigid(layout.Spacer{Width: gap}.Layout),
+				)
+			} else if icon != nil {
+				children = append(children,
+					layout.Rigid(iconWidget(icon, iconSize, palette.ink)),
+					layout.Rigid(layout.Spacer{Width: gap}.Layout),
 				)
 			}
-			if icon != nil {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(iconWidget(icon, 18, ink)),
-					layout.Rigid(layout.Spacer{Width: 8}.Layout),
-					layout.Rigid(labelWidget),
-				)
-			}
-			return labelWidget(gtx)
+			children = append(children, layout.Rigid(rawText(th, th.T.Label, palette.ink, label)))
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 		})
 		call := m.Stop()
+
 		desiredWidth := content.Size.X
 		if b.Busy && b.width > 0 {
 			desiredWidth = b.width
 		}
-		size := gtx.Constraints.Constrain(image.Pt(desiredWidth, h))
+		size := constrainMax(gtx, image.Pt(desiredWidth, h))
 		if !b.Busy {
 			b.width = size.X
 		}
 		r := image.Rectangle{Max: size}
-		FillRect(gtx.Ops, r, radius, bg)
-		if kind == Outlined {
-			StrokeRect(gtx.Ops, r.Inset(gtx.Dp(1)), max(0, radius-gtx.Dp(1)), max(1, gtx.Dp(1)), disabledInk(gtx, th.R.LineStrong))
+		disabled := !original.Source.Enabled()
+		var layer paint.OpacityStack
+		if disabled {
+			layer = paint.PushOpacity(gtx.Ops, 0.38)
 		}
-		off := op.Offset(image.Pt((size.X-content.Size.X)/2, (size.Y-content.Size.Y)/2)).Push(gtx.Ops)
+		FillCut(gtx.Ops, r, finalCut, palette.fill)
+		if palette.stroke {
+			StrokeCut(gtx.Ops, r, finalCut, max(1, gtx.Dp(1)), palette.outline)
+		}
+		offset := op.Offset(image.Pt((size.X-content.Size.X)/2, (size.Y-content.Size.Y)/2+sink)).Push(gtx.Ops)
 		call.Add(gtx.Ops)
-		off.Pop()
-		return layout.Dimensions{Size: size, Baseline: content.Baseline + (size.Y-content.Size.Y)/2}
+		offset.Pop()
+		if disabled {
+			layer.Pop()
+		}
+		return layout.Dimensions{Size: size, Baseline: content.Baseline + (size.Y-content.Size.Y)/2 + sink}
 	})
-	if renderGTX.Focused(&b.Clickable) {
-		FocusRing(renderGTX, th, image.Rectangle{Max: dims.Size}, radius)
+	if original.Focused(&b.Clickable) {
+		FocusRing(original, th, image.Rectangle{Max: dims.Size}, finalCut)
 	}
 	return dims
 }

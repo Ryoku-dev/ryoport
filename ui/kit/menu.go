@@ -12,73 +12,104 @@ import (
 )
 
 type MenuItem struct {
-	Icon             *widget.Icon
-	Label, Shortcut  string
-	Danger, Disabled bool
-	Divider          bool
+	Icon            *widget.Icon
+	Label, Shortcut string
+	Danger          bool
+	Disabled        bool
+	Divider         bool
 }
 
 type Menu struct {
 	clicks   []widget.Clickable
 	disabled []bool
 	divider  []bool
+	pending  []bool
 }
 
 func (m *Menu) prepare(items []MenuItem) {
 	if len(m.clicks) != len(items) {
-		m.clicks = make([]widget.Clickable, len(items))
+		clicks := make([]widget.Clickable, len(items))
+		copy(clicks, m.clicks)
+		m.clicks = clicks
 	}
-	m.disabled = make([]bool, len(items))
-	m.divider = make([]bool, len(items))
+	if len(m.disabled) != len(items) {
+		m.disabled = make([]bool, len(items))
+	}
+	if len(m.divider) != len(items) {
+		m.divider = make([]bool, len(items))
+	}
+	if len(m.pending) != len(items) {
+		m.pending = make([]bool, len(items))
+	}
 	for i, item := range items {
-		m.disabled[i], m.divider[i] = item.Disabled, item.Divider
+		m.disabled[i] = item.Disabled
+		m.divider[i] = item.Divider
+		if item.Disabled || item.Divider {
+			m.pending[i] = false
+		}
 	}
 }
 
 func (m *Menu) Layout(gtx layout.Context, th *theme.Theme, items []MenuItem) layout.Dimensions {
 	m.prepare(items)
-	gtx.Constraints.Min.X = min(gtx.Constraints.Max.X, max(gtx.Constraints.Min.X, gtx.Dp(220)))
-	rec := op.Record(gtx.Ops)
+	for i := range m.clicks {
+		if !m.disabled[i] && !m.divider[i] && m.clicks[i].Clicked(gtx) {
+			m.pending[i] = true
+		}
+	}
+	width := menuWidth(gtx, th, items)
+	gtx.Constraints.Min.X = width
+	gtx.Constraints.Max.X = width
+
+	content := op.Record(gtx.Ops)
 	dims := layout.Inset{Top: 6, Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		children := make([]layout.FlexChild, 0, len(items))
 		for i, item := range items {
 			i, item := i, item
 			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				if item.Divider {
-					return layout.Inset{Top: 6, Bottom: 6}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						FillRect(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, 1), 0, th.R.Line)
-						return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 1)}
+					return layout.Inset{Top: 6, Bottom: 6, Left: 8, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						width := gtx.Constraints.Max.X
+						FillCut(gtx.Ops, image.Rect(0, 0, width, max(1, gtx.Dp(1))), 0, th.R.Vein)
+						return layout.Dimensions{Size: image.Pt(width, max(1, gtx.Dp(1)))}
 					})
 				}
 				row := func(gtx layout.Context) layout.Dimensions {
-					gtx.Constraints.Min.Y = gtx.Dp(44)
+					height := gtx.Dp(40)
+					gtx.Constraints.Min.Y = height
+					gtx.Constraints.Max.Y = height
+					if m.clicks[i].Hovered() && !item.Disabled {
+						FillCut(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, height), 0, th.R.Stone3)
+					}
 					return layout.Inset{Left: 16, Right: 16}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-						ink := th.R.Ink
-						if item.Danger {
-							ink = th.R.Bad
-						}
-						if item.Disabled {
-							ink = th.R.InkFaint
-						}
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if item.Icon == nil {
-									return layout.Dimensions{}
-								}
-								sz := gtx.Dp(20)
-								gtx.Constraints.Min = image.Pt(sz, sz)
-								gtx.Constraints.Max = image.Pt(sz, sz)
-								return item.Icon.Layout(gtx, ink)
-							}),
-							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								if item.Icon == nil {
-									return layout.Dimensions{}
-								}
-								return layout.Spacer{Width: unit.Dp(12)}.Layout(gtx)
-							}),
-							layout.Flexed(1, Text(th, th.T.Label, ink, item.Label)),
-							layout.Rigid(Text(th, th.T.Caption, th.R.InkFaint, item.Shortcut)),
-						)
+						return centerY(gtx, func(gtx layout.Context) layout.Dimensions {
+							ink := th.R.Fg
+							if item.Danger {
+								ink = th.R.Jasper
+							}
+							if item.Disabled {
+								ink = th.R.Fg3
+							}
+							children := make([]layout.FlexChild, 0, 4)
+							if item.Icon != nil {
+								children = append(children,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										size := gtx.Dp(20)
+										gtx.Constraints = layout.Exact(image.Pt(size, size))
+										return item.Icon.Layout(gtx, ink)
+									}),
+									layout.Rigid(layout.Spacer{Width: 12}.Layout),
+								)
+							}
+							children = append(children, layout.Flexed(1, Text(th, th.T.Label, ink, item.Label)))
+							if item.Shortcut != "" {
+								children = append(children,
+									layout.Rigid(layout.Spacer{Width: unit.Dp(13)}.Layout),
+									layout.Rigid(Text(th, th.T.MonoSm, th.R.Fg3, item.Shortcut)),
+								)
+							}
+							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
+						})
 					})
 				}
 				if item.Disabled {
@@ -89,18 +120,78 @@ func (m *Menu) Layout(gtx layout.Context, th *theme.Theme, items []MenuItem) lay
 		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	})
-	call := rec.Stop()
-	Shadow(gtx, image.Rectangle{Max: dims.Size}, Radius(gtx, th.Shape.M, dims.Size.Y), 3)
-	FillRect(gtx.Ops, image.Rectangle{Max: dims.Size}, Radius(gtx, th.Shape.M, dims.Size.Y), th.R.Overlay)
-	call.Add(gtx.Ops)
+	contentCall := content.Stop()
+
+	overlay := op.Record(gtx.Ops)
+	cut := gtx.Dp(8)
+	outline := max(1, gtx.Dp(1))
+	r := image.Rectangle{Max: dims.Size}
+	FillCut(gtx.Ops, r, cut, th.R.Stone4)
+	StrokeCut(gtx.Ops, r, cut, outline, th.R.Vein)
+	contentCall.Add(gtx.Ops)
+	deferOverlay(gtx, overlay.Stop())
 	return dims
+}
+
+func menuWidth(gtx layout.Context, th *theme.Theme, items []MenuItem) int {
+	maximum := min(gtx.Dp(360), gtx.Constraints.Max.X)
+	minimum := min(gtx.Dp(220), maximum)
+	widest := minimum
+	var measureOps op.Ops
+	for _, item := range items {
+		if item.Divider {
+			continue
+		}
+		fixed := gtx.Dp(32)
+		if item.Icon != nil {
+			fixed += gtx.Dp(32)
+		}
+		if item.Shortcut != "" {
+			measure := gtx
+			measure.Constraints.Min = image.Point{}
+			measure.Constraints.Max.X = max(0, maximum-fixed-gtx.Dp(13))
+			measureOps.Reset()
+			measure.Ops = &measureOps
+			dims := Label{Style: th.T.MonoSm, Color: th.R.Fg3, MaxLines: 1}.Layout(measure, th, item.Shortcut)
+			fixed += gtx.Dp(13) + dims.Size.X
+		}
+		measure := gtx
+		measure.Constraints.Min = image.Point{}
+		measure.Constraints.Max.X = max(0, maximum-fixed)
+		measureOps.Reset()
+		measure.Ops = &measureOps
+		dims := Label{Style: th.T.Label, Color: th.R.Fg, MaxLines: 1}.Layout(measure, th, item.Label)
+		widest = max(widest, min(maximum, fixed+dims.Size.X))
+	}
+	return widest
 }
 
 func (m *Menu) Clicked(gtx layout.Context) (int, bool) {
 	for i := range m.clicks {
+		if m.pending[i] {
+			m.pending[i] = false
+			return i, true
+		}
 		if !m.disabled[i] && !m.divider[i] && m.clicks[i].Clicked(gtx) {
 			return i, true
 		}
 	}
 	return 0, false
+}
+
+func centerY(gtx layout.Context, w layout.Widget) layout.Dimensions {
+	original := gtx.Constraints
+	gtx.Constraints.Min.Y = 0
+	record := op.Record(gtx.Ops)
+	dims := w(gtx)
+	call := record.Stop()
+	size := original.Constrain(image.Pt(dims.Size.X, max(original.Min.Y, dims.Size.Y)))
+	y := (size.Y - dims.Size.Y) / 2
+	offset := op.Offset(image.Pt(0, y)).Push(gtx.Ops)
+	call.Add(gtx.Ops)
+	offset.Pop()
+	return layout.Dimensions{
+		Size:     size,
+		Baseline: dims.Baseline + size.Y - dims.Size.Y - y,
+	}
 }

@@ -1,4 +1,4 @@
-// Package kit provides Ryoport's Gio component library.
+// Package kit provides Ryoport's Lithic Gio components.
 package kit
 
 import (
@@ -20,6 +20,12 @@ func exact(gtx layout.Context, size image.Point) layout.Context {
 	return gtx
 }
 
+func constrainMax(gtx layout.Context, size image.Point) image.Point {
+	size.X = min(max(0, size.X), gtx.Constraints.Max.X)
+	size.Y = min(max(0, size.Y), gtx.Constraints.Max.Y)
+	return size
+}
+
 func iconWidget(icon *widget.Icon, size unit.Dp, ink color.NRGBA) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		if icon == nil {
@@ -37,10 +43,12 @@ func textMaterial(ops *op.Ops, c color.NRGBA) op.CallOp {
 }
 
 func disabledInk(gtx layout.Context, c color.NRGBA) color.NRGBA {
-	if !gtx.Enabled() {
+	if !gtx.Source.Enabled() {
 		return theme.WithAlpha(c, 0.38)
 	}
 	return c
 }
 
-func lerp(a, b, t float32) float32 { return a + (b-a)*t }
+func lerp(a, b, t float32) float32 {
+	return a + (b-a)*t
+}

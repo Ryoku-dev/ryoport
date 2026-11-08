@@ -1,0 +1,140 @@
+package kit
+
+import (
+	"image"
+
+	"gioui.org/io/key"
+	"gioui.org/io/pointer"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/paint"
+	"gioui.org/widget"
+
+	"github.com/ryoku-dev/ryoport/ui/anim"
+	"github.com/ryoku-dev/ryoport/ui/theme"
+)
+
+type Dialog struct {
+	Open bool
+
+	scrim    widget.Clickable
+	enter    anim.Tween
+	wasOpen  bool
+	closed   bool
+	slabRect image.Rectangle
+}
+
+func (d *Dialog) dismiss() {
+	d.Open = false
+	d.wasOpen = false
+	d.closed = true
+	d.slabRect = image.Rectangle{}
+}
+
+func (d *Dialog) Layout(gtx layout.Context, th *theme.Theme, title string, body layout.Widget, actions ...layout.Widget) layout.Dimensions {
+	window := gtx.Constraints.Max
+	if !d.Open {
+		d.wasOpen = false
+		d.slabRect = image.Rectangle{}
+		return layout.Dimensions{Size: window}
+	}
+
+	if d.scrim.Clicked(gtx) {
+		history := d.scrim.History()
+		if len(history) == 0 || !history[len(history)-1].Position.In(d.slabRect) {
+			d.dismiss()
+			return layout.Dimensions{Size: window}
+		}
+	}
+	for {
+		event, ok := gtx.Event(key.Filter{Name: key.NameEscape})
+		if !ok {
+			break
+		}
+		if event, ok := event.(key.Event); ok && event.State == key.Press {
+			d.dismiss()
+			return layout.Dimensions{Size: window}
+		}
+	}
+
+	if !d.wasOpen {
+		d.enter = anim.Tween{Duration: th.Motion.Overlay, Ease: anim.EaseChisel}
+		d.enter.Set(gtx, 0)
+		d.enter.Set(gtx, 1)
+		d.wasOpen = true
+	}
+	progress := d.enter.Value(gtx)
+
+	margin := gtx.Dp(16)
+	width := min(gtx.Dp(520), max(0, window.X-2*margin))
+	padding := gtx.Dp(34)
+	innerWidth := max(0, width-2*padding)
+	maxInnerHeight := max(0, window.Y-2*margin-2*padding)
+
+	insideCtx := gtx
+	insideCtx = overlayContentContext(insideCtx)
+	insideCtx.Constraints.Min = image.Pt(innerWidth, 0)
+	insideCtx.Constraints.Max = image.Pt(innerWidth, maxInnerHeight)
+	insideRecord := op.Record(gtx.Ops)
+	children := []layout.FlexChild{
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return Label{Style: th.T.Sentence, Color: th.R.Fg, MaxLines: 2}.Layout(gtx, th, title)
+		}),
+		layout.Rigid(layout.Spacer{Height: 21}.Layout),
+		layout.Rigid(body),
+	}
+	if len(actions) > 0 {
+		children = append(children,
+			layout.Rigid(layout.Spacer{Height: 34}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				row := make([]layout.FlexChild, 0, len(actions)*2-1)
+				for i, action := range actions {
+					if i > 0 {
+						row = append(row, layout.Rigid(layout.Spacer{Width: 8}.Layout))
+					}
+					row = append(row, layout.Rigid(action))
+				}
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Spacing: layout.SpaceStart}.Layout(gtx, row...)
+			}),
+		)
+	}
+	insideDims := layout.Flex{Axis: layout.Vertical}.Layout(insideCtx, children...)
+	insideCall := insideRecord.Stop()
+	height := min(window.Y-2*margin, insideDims.Size.Y+2*padding)
+	height = max(0, height)
+	x := (window.X - width) / 2
+	y := (window.Y-height)/2 + int(float32(gtx.Dp(12))*(1-progress))
+	d.slabRect = image.Rect(x, y, x+width, y+height)
+
+	overlay := op.Record(gtx.Ops)
+	opacity := paint.PushOpacity(gtx.Ops, progress)
+	catcherCtx := gtx
+	catcherCtx.Constraints = layout.Exact(window)
+	pass := pointer.PassOp{}.Push(gtx.Ops)
+	d.scrim.Layout(catcherCtx, func(gtx layout.Context) layout.Dimensions {
+		FillCut(gtx.Ops, image.Rectangle{Max: window}, 0, th.R.Scrim)
+		return layout.Dimensions{Size: window}
+	})
+	pass.Pop()
+
+	offset := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
+	r := image.Rect(0, 0, width, height)
+	cut := gtx.Dp(th.Cut.Large)
+	FillCut(gtx.Ops, r, cut, th.R.Stone4)
+	StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), th.R.Vein)
+	contentOffset := op.Offset(image.Pt(padding, padding)).Push(gtx.Ops)
+	insideCall.Add(gtx.Ops)
+	contentOffset.Pop()
+	offset.Pop()
+	opacity.Pop()
+	op.Defer(gtx.Ops, overlay.Stop())
+	return layout.Dimensions{Size: window}
+}
+
+func (d *Dialog) Closed(layout.Context) bool {
+	if !d.closed {
+		return false
+	}
+	d.closed = false
+	return true
+}

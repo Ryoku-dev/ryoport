@@ -1,0 +1,69 @@
+package kit
+
+import (
+	"image"
+
+	"gioui.org/io/semantic"
+	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/widget"
+	"github.com/ryoku-dev/ryoport/ui/anim"
+	"github.com/ryoku-dev/ryoport/ui/icons"
+	"github.com/ryoku-dev/ryoport/ui/theme"
+)
+
+type NewPlaque struct {
+	widget.Clickable
+	press anim.Tween
+}
+
+func (p *NewPlaque) Layout(gtx layout.Context, th *theme.Theme, compact, open bool) layout.Dimensions {
+	w, h, iconSize, cut := gtx.Dp(62), gtx.Dp(52), gtx.Dp(21), gtx.Dp(th.Cut.Mid)
+	if compact {
+		w, h, iconSize, cut = gtx.Dp(48), gtx.Dp(40), gtx.Dp(20), gtx.Dp(th.Cut.Small)
+	}
+	finalCut := cut
+	dims := p.Clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		semantic.Button.Add(gtx.Ops)
+		semantic.LabelOp("New").Add(gtx.Ops)
+		p.press.Duration = th.Motion.Press
+		p.press.Ease = anim.EaseChisel
+		if p.Pressed() && gtx.Source.Enabled() {
+			p.press.Set(gtx, 1)
+		} else {
+			p.press.Set(gtx, 0)
+		}
+		pressed := p.press.Value(gtx)
+		finalCut = cut + int(float32(gtx.Dp(4))*pressed+0.5)
+		sink := int(float32(gtx.Dp(1))*pressed + 0.5)
+		r := image.Rectangle{Max: constrainMax(gtx, image.Pt(w, h))}
+		ink := drawButtonSurface(gtx, th, r, finalCut, Gold, p.Hovered())
+		icon := icons.Add
+		if open {
+			icon = icons.Close
+		}
+		if compact {
+			offset := op.Offset(image.Pt((r.Dx()-iconSize)/2, (r.Dy()-iconSize)/2+sink)).Push(gtx.Ops)
+			icon.Layout(exact(gtx, image.Pt(iconSize, iconSize)), ink)
+			offset.Pop()
+		} else {
+			contentGTX := exact(gtx, image.Pt(r.Dx(), r.Dy()))
+			offset := op.Offset(image.Pt(0, sink)).Push(gtx.Ops)
+			layout.Center.Layout(contentGTX, func(gtx layout.Context) layout.Dimensions {
+				return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return icon.Layout(exact(gtx, image.Pt(iconSize, iconSize)), ink)
+					}),
+					layout.Rigid(layout.Spacer{Height: 2}.Layout),
+					layout.Rigid(Text(th, th.T.Label, ink, "New")),
+				)
+			})
+			offset.Pop()
+		}
+		return layout.Dimensions{Size: r.Size()}
+	})
+	if gtx.Focused(&p.Clickable) {
+		FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, finalCut)
+	}
+	return dims
+}

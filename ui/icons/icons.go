@@ -43,6 +43,8 @@ func ByName(name string) *widget.Icon {
 		return Minimize
 	case "content_copy":
 		return ContentCopy
+	case "content_cut":
+		return ContentCut
 	case "delete":
 		return Delete
 	case "download":
@@ -145,6 +147,8 @@ func ByName(name string) *widget.Icon {
 		return DesktopWindows
 	case "computer":
 		return Computer
+	case "devices":
+		return Devices
 	case "monitor":
 		return Monitor
 	case "memory":
@@ -161,8 +165,12 @@ func ByName(name string) *widget.Icon {
 		return Usb
 	case "play_arrow":
 		return PlayArrow
+	case "play_circle":
+		return PlayCircle
 	case "stop":
 		return Stop
+	case "stop_circle":
+		return StopCircle
 	case "pause":
 		return Pause
 	case "power_settings_new":
@@ -179,6 +187,10 @@ func ByName(name string) *widget.Icon {
 		return Cloud
 	case "cloud_off":
 		return CloudOff
+	case "backup":
+		return Backup
+	case "restore":
+		return Restore
 	case "deployed_code":
 		return DeployedCode
 	case "rocket_launch":
@@ -243,6 +255,8 @@ func ByName(name string) *widget.Icon {
 		return Cable
 	case "screen_share":
 		return ScreenShare
+	case "cast":
+		return Cast
 	case "dock":
 		return Dock
 	case "receipt_long":

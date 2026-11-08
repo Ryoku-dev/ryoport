@@ -4,7 +4,9 @@ import (
 	"image"
 
 	"gioui.org/layout"
-	"gioui.org/unit"
+	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
@@ -15,50 +17,44 @@ type Fact struct {
 	Mono  bool
 }
 
-func Facts(th *theme.Theme, facts []Fact, minCol unit.Dp) layout.Widget {
+func Facts(th *theme.Theme, facts []Fact) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		if len(facts) == 0 {
 			return layout.Dimensions{}
 		}
-		minWidth := max(1, gtx.Dp(minCol))
-		cols := max(1, gtx.Constraints.Max.X/minWidth)
-		cols = min(cols, len(facts))
-		rows := (len(facts) + cols - 1) / cols
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, func() []layout.FlexChild {
-			children := make([]layout.FlexChild, 0, rows)
-			for row := range rows {
-				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{Axis: layout.Horizontal}.Layout(gtx, func() []layout.FlexChild {
-						cells := make([]layout.FlexChild, 0, cols)
-						for col := range cols {
-							idx := row*cols + col
-							cells = append(cells, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-								if idx >= len(facts) {
-									return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
-								}
-								f := facts[idx]
-								value := f.Value
-								if value == "" {
-									value = "-"
-								}
-								style := th.T.Body
-								if f.Mono {
-									style = th.T.Mono
-								}
-								return layout.Inset{Right: th.Sp.S4, Bottom: th.Sp.S4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-									return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-										layout.Rigid(Text(th, th.T.Caption, th.R.InkDim, f.Label)),
-										layout.Rigid(layout.Spacer{Height: th.Sp.S1}.Layout),
-										layout.Rigid(Text(th, style, th.R.Ink, value)),
-									)
-								})
-							}))
-						}
-						return cells
-					}()...)
-				}))
+		rowH := max(1, gtx.Dp(44))
+		width := gtx.Constraints.Max.X
+		total := len(facts) * rowH
+		size := gtx.Constraints.Constrain(image.Pt(width, total))
+		viewport := clip.Rect(image.Rectangle{Max: size}).Push(gtx.Ops)
+		for i, fact := range facts {
+			y := i * rowH
+			if i > 0 {
+				paint.FillShape(gtx.Ops, th.R.Vein, clip.Rect(image.Rect(0, y, size.X, y+1)).Op())
 			}
-			return children
-		}()...)
+			stack := op.Offset(image.Pt(0, y)).Push(gtx.Ops)
+			rowCtx := gtx
+			rowCtx.Constraints = layout.Exact(image.Pt(size.X, rowH))
+			value := fact.Value
+			if value == "" {
+				value = "-"
+			}
+			valueStyle := th.T.Body
+			if fact.Mono {
+				valueStyle = th.T.Mono
+			}
+			layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(rowCtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					labelWidth := min(gtx.Constraints.Max.X, gtx.Dp(140))
+					gtx.Constraints.Min.X = labelWidth
+					gtx.Constraints.Max.X = labelWidth
+					return Text(th, th.T.Body, th.R.Fg3, fact.Label)(gtx)
+				}),
+				layout.Flexed(1, Text(th, valueStyle, th.R.Fg, value)),
+			)
+			stack.Pop()
+		}
+		viewport.Pop()
+		return layout.Dimensions{Size: size}
 	}
 }

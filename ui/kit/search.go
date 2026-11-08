@@ -13,7 +13,7 @@ import (
 
 type Search struct {
 	widget.Editor
-	clear widget.Clickable
+	clear IconButton
 }
 
 func (s *Search) Focus(gtx layout.Context) {
@@ -27,7 +27,7 @@ func (s *Search) Layout(gtx layout.Context, th *theme.Theme, placeholder, hint s
 		if !ok {
 			break
 		}
-		if ke, ok := e.(key.Event); ok && ke.State == key.Press {
+		if event, ok := e.(key.Event); ok && event.State == key.Press {
 			s.SetText("")
 		}
 	}
@@ -35,52 +35,50 @@ func (s *Search) Layout(gtx layout.Context, th *theme.Theme, placeholder, hint s
 		s.SetText("")
 		s.Focus(gtx)
 	}
+
 	w := gtx.Constraints.Max.X
 	if w <= 0 {
 		w = gtx.Dp(280)
 	}
-	h := gtx.Dp(48)
+	h := gtx.Dp(44)
 	size := gtx.Constraints.Constrain(image.Pt(w, h))
 	r := image.Rectangle{Max: size}
-	bg := th.R.Raised
+	cut := gtx.Dp(th.Cut.Mid)
+	FillCut(gtx.Ops, r, cut, disabledInk(gtx, th.R.Stone3))
 	if gtx.Focused(&s.Editor) {
-		bg = theme.Mix(bg, th.R.Ink, 0.04)
+		StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), disabledInk(gtx, th.R.Fg2))
 	}
-	FillRect(gtx.Ops, r, h/2, disabledInk(gtx, bg))
-	if gtx.Focused(&s.Editor) {
-		FocusRing(gtx, th, r, h/2)
-	}
-	is := gtx.Dp(20)
-	off := op.Offset(image.Pt(gtx.Dp(14), (h-is)/2)).Push(gtx.Ops)
-	icons.Search.Layout(exact(gtx, image.Pt(is, is)), disabledInk(gtx, th.R.InkDim))
-	off.Pop()
 
-	right := gtx.Dp(12)
+	iconSize := gtx.Dp(20)
+	offset := op.Offset(image.Pt(gtx.Dp(14), (size.Y-iconSize)/2)).Push(gtx.Ops)
+	icons.Search.Layout(exact(gtx, image.Pt(iconSize, iconSize)), disabledInk(gtx, th.R.Fg3))
+	offset.Pop()
+
+	right := gtx.Dp(14)
 	if s.Len() > 0 {
-		right = gtx.Dp(48)
+		buttonSize := gtx.Dp(32)
+		right = buttonSize + gtx.Dp(10)
+		s.clear.Small = true
+		offset = op.Offset(image.Pt(size.X-buttonSize-gtx.Dp(6), (size.Y-buttonSize)/2)).Push(gtx.Ops)
+		s.clear.Layout(exact(gtx, image.Pt(buttonSize, buttonSize)), th, Quiet, icons.Close, "Clear search")
+		offset.Pop()
 	} else if hint != "" && !gtx.Focused(&s.Editor) {
+		measureGTX := gtx
+		measureGTX.Constraints.Min = image.Point{}
 		m := op.Record(gtx.Ops)
-		d := layout.Inset{Left: 8, Right: 8, Top: 4, Bottom: 4}.Layout(gtx, Text(th, th.T.Caption, disabledInk(gtx, th.R.InkDim), hint))
-		call := m.Stop()
-		right = d.Size.X + gtx.Dp(12)
-		hintRect := image.Rect(size.X-right, (h-d.Size.Y)/2, size.X-gtx.Dp(8), (h+d.Size.Y)/2)
-		FillRect(gtx.Ops, hintRect, d.Size.Y/2, disabledInk(gtx, th.R.Selected))
-		o := op.Offset(hintRect.Min).Push(gtx.Ops)
-		call.Add(gtx.Ops)
-		o.Pop()
+		hintDims := Label{Style: th.T.MonoSm, Color: disabledInk(measureGTX, th.R.Fg3), MaxLines: 1}.Layout(measureGTX, th, hint)
+		hintCall := m.Stop()
+		right = hintDims.Size.X + gtx.Dp(18)
+		offset = op.Offset(image.Pt(size.X-right+gtx.Dp(4), (size.Y-hintDims.Size.Y)/2)).Push(gtx.Ops)
+		hintCall.Add(gtx.Ops)
+		offset.Pop()
 	}
-	innerW := max(0, size.X-gtx.Dp(46)-right)
-	editorGTX := exact(gtx, image.Pt(innerW, h-gtx.Dp(16)))
-	off = op.Offset(image.Pt(gtx.Dp(42), gtx.Dp(8))).Push(gtx.Ops)
+
+	innerWidth := max(0, size.X-gtx.Dp(46)-right)
+	editorHeight := max(0, size.Y-gtx.Dp(16))
+	editorGTX := exact(gtx, image.Pt(innerWidth, editorHeight))
+	offset = op.Offset(image.Pt(gtx.Dp(42), (size.Y-editorHeight)/2)).Push(gtx.Ops)
 	layoutEditor(editorGTX, th, &s.Editor, th.T.Body, placeholder)
-	off.Pop()
-	if s.Len() > 0 {
-		buttonGTX := exact(gtx, image.Pt(gtx.Dp(40), gtx.Dp(40)))
-		off = op.Offset(image.Pt(size.X-gtx.Dp(44), gtx.Dp(4))).Push(gtx.Ops)
-		b := IconButton{Clickable: s.clear}
-		b.Layout(buttonGTX, th, Standard, icons.Close, "Clear search")
-		s.clear = b.Clickable
-		off.Pop()
-	}
+	offset.Pop()
 	return layout.Dimensions{Size: size}
 }

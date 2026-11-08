@@ -2,9 +2,11 @@ package kit
 
 import (
 	"image"
+	"math"
 
 	"gioui.org/layout"
 	"gioui.org/widget"
+
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
@@ -12,20 +14,32 @@ type List struct {
 	widget.List
 }
 
+func scrollThumb(viewport, content, first, offset, count int) (top, height int, ok bool) {
+	if viewport <= 0 || content <= viewport || count <= 0 {
+		return 0, 0, false
+	}
+	height = max(12, viewport*viewport/content)
+	height = min(viewport, height)
+	travel := viewport - height
+	average := float64(content) / float64(count)
+	scrolled := float64(first)*average + float64(offset)
+	maxScroll := float64(content - viewport)
+	if maxScroll > 0 {
+		top = int(math.Round(float64(travel) * max(0, min(1, scrolled/maxScroll))))
+	}
+	return top, height, true
+}
+
 func (l *List) Layout(gtx layout.Context, th *theme.Theme, n int, el layout.ListElement) layout.Dimensions {
 	l.Axis = layout.Vertical
 	dims := l.List.Layout(gtx, n, el)
-	if l.Position.Length <= dims.Size.Y || dims.Size.Y <= 0 || n <= 0 {
+	top, thumbH, ok := scrollThumb(dims.Size.Y, l.Position.Length, l.Position.First, l.Position.Offset, n)
+	if !ok {
 		return dims
 	}
-	track := dims.Size.Y
-	thumbH := max(gtx.Dp(24), track*track/l.Position.Length)
-	thumbH = min(track, thumbH)
-	maxTop := track - thumbH
-	denom := max(1, n-l.Position.Count)
-	top := maxTop * min(l.Position.First, denom) / denom
-	w := max(1, gtx.Dp(4))
-	x := dims.Size.X - w - gtx.Dp(2)
-	FillRect(gtx.Ops, image.Rect(x, top, x+w, top+thumbH), w/2, th.R.InkFaint)
+	width := max(1, gtx.Dp(3))
+	x := dims.Size.X - width
+	cut := min(width/2, thumbH/2)
+	FillCut(gtx.Ops, image.Rect(x, top, x+width, top+thumbH), cut, th.R.Vein)
 	return dims
 }

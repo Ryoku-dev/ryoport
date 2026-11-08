@@ -19,9 +19,14 @@ func SetReduce(on bool) { reduce.Store(on) }
 func Reduced() bool { return reduce.Load() }
 
 // Spring is a critically damped spring toward Target. Omega sets the speed:
-// it settles in about 4/Omega seconds (18 is roughly 220 ms).
+// it settles in about 4/Omega seconds (18 is roughly 220 ms). Rest is how
+// close to the target, in the value's own units, and how slow, in those units
+// per second, counts as settled; zero means 0.001. A spring moving pixels can
+// stop half a pixel short, which nobody sees, instead of drawing frames for
+// sub-pixel motion.
 type Spring struct {
 	Omega  float32
+	Rest   float32
 	pos    float32
 	vel    float32
 	target float32
@@ -46,7 +51,11 @@ func (s *Spring) Snap(v float32) {
 func (s *Spring) Target() float32 { return s.target }
 
 func (s *Spring) Moving() bool {
-	return math.Abs(float64(s.pos-s.target)) > 0.001 || math.Abs(float64(s.vel)) > 0.001
+	rest := float64(s.Rest)
+	if rest <= 0 {
+		rest = 0.001
+	}
+	return math.Abs(float64(s.pos-s.target)) > rest || math.Abs(float64(s.vel)) > rest
 }
 
 // Value advances the spring to gtx.Now and returns its position.
@@ -142,10 +151,29 @@ func EaseOutCubic(p float32) float32 {
 	return 1 - q*q*q
 }
 
-// EaseEmphasized is Material's emphasized decelerate curve, near enough.
-func EaseEmphasized(p float32) float32 {
-	q := 1 - p
-	return 1 - q*q*q*q*q
+// EaseChisel is Lithic's one curve, cubic-bezier(.2, 0, 0, 1): a decisive
+// start that settles without overshoot.
+func EaseChisel(p float32) float32 {
+	if p <= 0 {
+		return 0
+	}
+	if p >= 1 {
+		return 1
+	}
+	bez := func(t, a, b float32) float32 {
+		u := 1 - t
+		return 3*u*u*t*a + 3*u*t*t*b + t*t*t
+	}
+	lo, hi := float32(0), float32(1)
+	for range 24 {
+		mid := (lo + hi) / 2
+		if bez(mid, 0.2, 0) < p {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	return bez((lo+hi)/2, 0, 1)
 }
 
 func EaseInOut(p float32) float32 {

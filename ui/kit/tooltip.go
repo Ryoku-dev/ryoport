@@ -10,7 +10,9 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
@@ -18,6 +20,8 @@ type tooltipState struct {
 	tag     struct{}
 	hovered bool
 	since   time.Time
+	shown   bool
+	enter   anim.Tween
 }
 
 type tooltipKey struct {
@@ -39,45 +43,71 @@ func Tooltip(gtx layout.Context, th *theme.Theme, tip string, w layout.Widget) l
 		tooltipStates.m[key] = state
 	}
 	tooltipStates.Unlock()
+
 	for {
 		e, ok := gtx.Event(pointer.Filter{Target: &state.tag, Kinds: pointer.Enter | pointer.Leave})
 		if !ok {
 			break
 		}
-		pe := e.(pointer.Event)
-		if pe.Kind == pointer.Enter {
-			state.hovered, state.since = true, gtx.Now
-			gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(600 * time.Millisecond)})
-		} else if pe.Kind == pointer.Leave {
-			state.hovered = false
+		if e, ok := e.(pointer.Event); ok {
+			switch e.Kind {
+			case pointer.Enter:
+				state.hovered = true
+				state.since = gtx.Now
+				state.shown = false
+				gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(600 * time.Millisecond)})
+			case pointer.Leave:
+				state.hovered = false
+				state.shown = false
+			}
 		}
 	}
+
 	dims := w(gtx)
 	pass := pointer.PassOp{}.Push(gtx.Ops)
 	area := clip.Rect{Max: dims.Size}.Push(gtx.Ops)
 	event.Op(gtx.Ops, &state.tag)
 	area.Pop()
 	pass.Pop()
-	if !state.hovered || gtx.Now.Sub(state.since) < 600*time.Millisecond || tip == "" {
+	if tip == "" || !state.hovered || gtx.Now.Sub(state.since) < 600*time.Millisecond {
 		return dims
 	}
-	rec := op.Record(gtx.Ops)
+
+	if !state.shown {
+		state.enter = anim.Tween{Duration: th.Motion.Overlay, Ease: anim.EaseChisel}
+		state.enter.Set(gtx, 0)
+		state.enter.Set(gtx, 1)
+		state.shown = true
+	}
+	progress := state.enter.Value(gtx)
+
 	tipCtx := gtx
 	tipCtx.Constraints.Min = image.Point{}
 	tipCtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(320))
-	tipDims := Surface(tipCtx, th.R.Overlay, th.Shape.S, func(gtx layout.Context) layout.Dimensions {
-		return layout.Inset{Top: 6, Bottom: 6, Left: 8, Right: 8}.Layout(gtx, Text(th, th.T.Caption, th.R.Ink, tip))
-	})
-	call := rec.Stop()
-	overlay := op.Record(gtx.Ops)
-	x := max(0, min(gtx.Constraints.Max.X-tipDims.Size.X, (dims.Size.X-tipDims.Size.X)/2))
-	y := dims.Size.Y + gtx.Dp(8)
-	if y+tipDims.Size.Y > gtx.Constraints.Max.Y {
-		y = -tipDims.Size.Y - gtx.Dp(8)
+	tipRecord := op.Record(gtx.Ops)
+	tipDims := layout.Inset{Top: 6, Bottom: 6, Left: 8, Right: 8}.Layout(tipCtx, Text(th, th.T.Caption, th.R.Fg, tip))
+	tipCall := tipRecord.Stop()
+
+	viewport := image.Rect(0, -gtx.Constraints.Max.Y, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
+	anchor := image.Rectangle{Max: dims.Size}
+	position := placePopover(viewport, anchor, tipDims.Size)
+	if position.Y >= anchor.Max.Y {
+		position.Y += gtx.Dp(8)
+	} else {
+		position.Y -= gtx.Dp(8)
 	}
-	off := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
-	call.Add(gtx.Ops)
-	off.Pop()
-	op.Defer(gtx.Ops, overlay.Stop())
+	position.Y += int(float32(gtx.Dp(8)) * (1 - progress))
+
+	overlay := op.Record(gtx.Ops)
+	opacity := paint.PushOpacity(gtx.Ops, progress)
+	offset := op.Offset(position).Push(gtx.Ops)
+	r := image.Rectangle{Max: tipDims.Size}
+	cut := gtx.Dp(4)
+	FillCut(gtx.Ops, r, cut, th.R.Stone4)
+	StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), th.R.Vein)
+	tipCall.Add(gtx.Ops)
+	offset.Pop()
+	opacity.Pop()
+	deferOverlay(gtx, overlay.Stop())
 	return dims
 }

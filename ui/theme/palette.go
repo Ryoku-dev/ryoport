@@ -19,26 +19,36 @@ func FromPalette(p palette.Palette) Roles {
 	}
 
 	r := Roles{
-		Bg:         role("surface", fallback.Bg),
-		Panel:      role("surfaceContainerLow", fallback.Panel),
-		Raised:     role("surfaceContainer", fallback.Raised),
-		Overlay:    role("surfaceContainerHigh", fallback.Overlay),
-		Selected:   role("surfaceContainerHighest", fallback.Selected),
-		Ink:        role("onSurface", fallback.Ink),
-		InkDim:     role("onSurfaceVariant", fallback.InkDim),
-		Line:       role("outlineVariant", fallback.Line),
-		LineStrong: role("outline", fallback.LineStrong),
-		Bone:       role("inverseSurface", fallback.Bone),
-		OnBone:     role("inverseOnSurface", fallback.OnBone),
-		Accent:     role("primary", fallback.Accent),
-		OnAccent:   role("onPrimary", fallback.OnAccent),
-		Scrim:      fallback.Scrim,
-		Dark:       p.Dark,
+		Fg:    role("onSurface", fallback.Fg),
+		Fg2:   role("onSurfaceVariant", fallback.Fg2),
+		Fg3:   role("outline", fallback.Fg3),
+		Sel:   role("inverseSurface", fallback.Sel),
+		OnSel: role("inverseOnSurface", fallback.OnSel),
+		Scrim: fallback.Scrim,
+		Dark:  p.Dark,
 	}
-	r.InkFaint = Mix(r.Bg, r.InkDim, 0.62)
-	if scrim, ok := p.Roles["scrim"]; ok {
-		r.Scrim = WithAlpha(scrim, 0.6)
+	if p.Dark {
+		r.Ground = role("surfaceContainerLowest", fallback.Ground)
+		r.Stone1 = role("surface", fallback.Stone1)
+		r.Stone2 = role("surfaceContainerLow", fallback.Stone2)
+		r.Stone3 = role("surfaceContainer", fallback.Stone3)
+		r.Stone4 = role("surfaceContainerHigh", fallback.Stone4)
+		r.Vein = role("surfaceContainerHighest", fallback.Vein)
+		if scrim, ok := p.Roles["scrim"]; ok {
+			r.Scrim = WithAlpha(scrim, 0.62)
+		}
+	} else {
+		r.Ground = role("surfaceContainerHighest", fallback.Ground)
+		r.Stone1 = role("surfaceContainerHigh", fallback.Stone1)
+		r.Stone2 = role("surfaceContainerLowest", fallback.Stone2)
+		r.Stone3 = role("surfaceContainer", fallback.Stone3)
+		r.Stone4 = role("surfaceContainerLowest", fallback.Stone4)
+		r.Vein = role("outlineVariant", fallback.Vein)
+		if scrim, ok := p.Roles["scrim"]; ok {
+			r.Scrim = WithAlpha(scrim, 0.45)
+		}
 	}
-	r.StateInks()
+	r.OnSel2 = Mix(r.OnSel, r.Sel, 0.45)
+	r.SetStones()
 	return r
 }

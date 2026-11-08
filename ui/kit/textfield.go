@@ -13,7 +13,7 @@ import (
 type TextField struct {
 	widget.Editor
 	Secret, Mono bool
-	reveal       widget.Clickable
+	reveal       IconButton
 	revealed     bool
 }
 
@@ -30,10 +30,11 @@ func (f *TextField) Layout(gtx layout.Context, th *theme.Theme, label, placehold
 	if f.Mono {
 		style = th.T.Mono
 	}
+
 	children := make([]layout.FlexChild, 0, 5)
 	if label != "" {
 		children = append(children,
-			layout.Rigid(Text(th, th.T.Caption, disabledInk(gtx, th.R.InkDim), label)),
+			layout.Rigid(Text(th, th.T.Caption, disabledInk(gtx, th.R.Fg3), label)),
 			layout.Rigid(layout.Spacer{Height: 4}.Layout),
 		)
 	}
@@ -42,53 +43,46 @@ func (f *TextField) Layout(gtx layout.Context, th *theme.Theme, label, placehold
 		if w <= 0 {
 			w = gtx.Dp(240)
 		}
-		h := gtx.Dp(48)
+		h := gtx.Dp(44)
 		size := gtx.Constraints.Constrain(image.Pt(w, h))
 		r := image.Rectangle{Max: size}
-		bg := th.R.Raised
-		if gtx.Focused(&f.Editor) {
-			bg = theme.Mix(bg, th.R.Ink, 0.04)
-		}
-		FillRect(gtx.Ops, r, gtx.Dp(th.Shape.M), disabledInk(gtx, bg))
-		outline := th.R.LineStrong
-		width := 0
-		if gtx.Focused(&f.Editor) {
-			width = max(1, gtx.Dp(2))
-		}
+		cut := gtx.Dp(th.Cut.Mid)
+		FillCut(gtx.Ops, r, cut, disabledInk(gtx, th.R.Stone3))
+		outline := th.R.Fg2
 		if errText != "" {
-			outline, width = th.R.Bad, max(1, gtx.Dp(2))
+			outline = th.R.Jasper
 		}
-		if width > 0 {
-			StrokeRect(gtx.Ops, r.Inset(width/2), max(0, gtx.Dp(th.Shape.M)-width/2), width, disabledInk(gtx, outline))
+		if gtx.Focused(&f.Editor) || errText != "" {
+			StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), disabledInk(gtx, outline))
 		}
-		inner := size.X - gtx.Dp(24)
+
+		innerWidth := max(0, size.X-gtx.Dp(28))
 		if f.Secret {
-			inner -= gtx.Dp(40)
+			innerWidth = max(0, innerWidth-gtx.Dp(36))
 		}
-		editorGTX := gtx
-		editorGTX.Constraints = layout.Exact(image.Pt(max(0, inner), h-gtx.Dp(16)))
-		off := op.Offset(image.Pt(gtx.Dp(12), gtx.Dp(8))).Push(gtx.Ops)
+		editorHeight := max(0, size.Y-gtx.Dp(16))
+		editorGTX := exact(gtx, image.Pt(innerWidth, editorHeight))
+		offset := op.Offset(image.Pt(gtx.Dp(14), (size.Y-editorHeight)/2)).Push(gtx.Ops)
 		layoutEditor(editorGTX, th, &f.Editor, style, placeholder)
-		off.Pop()
+		offset.Pop()
+
 		if f.Secret {
-			icon := icons.Visibility
-			desc := "Show value"
+			icon, desc := icons.Visibility, "Show value"
 			if f.revealed {
 				icon, desc = icons.VisibilityOff, "Hide value"
 			}
-			buttonGTX := exact(gtx, image.Pt(gtx.Dp(40), gtx.Dp(40)))
-			off := op.Offset(image.Pt(size.X-gtx.Dp(44), gtx.Dp(4))).Push(gtx.Ops)
-			b := IconButton{Clickable: f.reveal}
-			b.Layout(buttonGTX, th, Standard, icon, desc)
-			f.reveal = b.Clickable
-			off.Pop()
+			f.reveal.Small = true
+			buttonSize := gtx.Dp(32)
+			offset := op.Offset(image.Pt(size.X-buttonSize-gtx.Dp(6), (size.Y-buttonSize)/2)).Push(gtx.Ops)
+			f.reveal.Layout(exact(gtx, image.Pt(buttonSize, buttonSize)), th, Quiet, icon, desc)
+			offset.Pop()
 		}
 		return layout.Dimensions{Size: size}
 	}))
-	message := help
-	messageColor := th.R.InkDim
+
+	message, messageColor := help, th.R.Fg3
 	if errText != "" {
-		message, messageColor = errText, th.R.Bad
+		message, messageColor = errText, th.R.Jasper
 	}
 	if message != "" {
 		children = append(children,
@@ -100,10 +94,10 @@ func (f *TextField) Layout(gtx layout.Context, th *theme.Theme, label, placehold
 }
 
 func layoutEditor(gtx layout.Context, th *theme.Theme, editor *widget.Editor, style theme.TextStyle, placeholder string) layout.Dimensions {
-	textCall := textMaterial(gtx.Ops, disabledInk(gtx, th.R.Ink))
-	selectionCall := textMaterial(gtx.Ops, disabledInk(gtx, th.R.Selected))
+	textCall := textMaterial(gtx.Ops, disabledInk(gtx, th.R.Fg))
+	selectionCall := textMaterial(gtx.Ops, disabledInk(gtx, th.R.Sel))
 	m := op.Record(gtx.Ops)
-	hint := Label{Style: style, Color: disabledInk(gtx, th.R.InkFaint), MaxLines: 1}.Layout(gtx, th, placeholder)
+	hint := Label{Style: style, Color: disabledInk(gtx, th.R.Fg3), MaxLines: 1}.Layout(gtx, th, placeholder)
 	hintCall := m.Stop()
 	editor.LineHeight = style.Line
 	dims := editor.Layout(gtx, th.Shaper, style.Face, style.Size, textCall, selectionCall)

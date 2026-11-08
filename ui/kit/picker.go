@@ -24,33 +24,43 @@ func (p *Picker) Layout(gtx layout.Context, th *theme.Theme, label string, optio
 	if selected >= 0 && selected < len(options) {
 		value = options[selected]
 	}
+
 	anchor := func(gtx layout.Context) layout.Dimensions {
-		return p.button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			h := gtx.Dp(48)
-			w := max(gtx.Constraints.Min.X, gtx.Dp(160))
-			w = min(w, gtx.Constraints.Max.X)
-			r := image.Rect(0, 0, w, h)
-			FillRect(gtx.Ops, r, Radius(gtx, th.Shape.S, h), th.R.Raised)
-			StrokeRect(gtx.Ops, r, Radius(gtx, th.Shape.S, h), 1, th.R.Line)
-			gtx.Constraints.Min = r.Max
-			gtx.Constraints.Max = r.Max
-			return layout.Inset{Left: 12, Right: 12}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-							layout.Rigid(Text(th, th.T.Caption, th.R.InkDim, label)),
-							layout.Rigid(Text(th, th.T.Body, th.R.Ink, value)),
+		children := make([]layout.FlexChild, 0, 3)
+		if label != "" {
+			children = append(children,
+				layout.Rigid(Text(th, th.T.Caption, th.R.Fg3, label)),
+				layout.Rigid(layout.Spacer{Height: 4}.Layout),
+			)
+		}
+		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return p.button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				height := gtx.Dp(44)
+				width := max(gtx.Constraints.Min.X, gtx.Dp(160))
+				width = min(width, gtx.Constraints.Max.X)
+				r := image.Rect(0, 0, width, height)
+				fill := th.R.Stone3
+				if p.button.Hovered() {
+					fill = theme.Mix(fill, th.R.Fg, .06)
+				}
+				FillCut(gtx.Ops, r, gtx.Dp(th.Cut.Mid), fill)
+				gtx.Constraints = layout.Exact(r.Max)
+				return layout.Inset{Left: 14, Right: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return centerY(gtx, func(gtx layout.Context) layout.Dimensions {
+						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+							layout.Flexed(1, Text(th, th.T.Body, th.R.Fg, value)),
+							layout.Rigid(layout.Spacer{Width: 10}.Layout),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								size := gtx.Dp(20)
+								gtx.Constraints = layout.Exact(image.Pt(size, size))
+								return icons.ExpandMore.Layout(gtx, th.R.Fg2)
+							}),
 						)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						sz := gtx.Dp(20)
-						gtx.Constraints.Min = image.Pt(sz, sz)
-						gtx.Constraints.Max = image.Pt(sz, sz)
-						return icons.ExpandMore.Layout(gtx, th.R.InkDim)
-					}),
-				)
+					})
+				})
 			})
-		})
+		}))
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	}
 	content := func(gtx layout.Context) layout.Dimensions {
 		items := make([]MenuItem, len(options))
@@ -63,9 +73,9 @@ func (p *Picker) Layout(gtx layout.Context, th *theme.Theme, label string, optio
 }
 
 func (p *Picker) Changed(gtx layout.Context) (int, bool) {
-	if i, ok := p.menu.Clicked(gtx); ok {
+	if selected, ok := p.menu.Clicked(gtx); ok {
 		p.popover.Open = false
-		return i, true
+		return selected, true
 	}
 	return 0, false
 }

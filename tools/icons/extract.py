@@ -10,7 +10,7 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
 
-FONT = "/usr/share/fonts/TTF/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf"
+FONT = "/usr/share/fonts/TTF/MaterialSymbolsSharp[FILL,GRAD,opsz,wght].ttf"
 
 NAMES = """Add:add
 Remove:remove
@@ -27,6 +27,7 @@ CropSquare:crop_square
 FilterNone:filter_none
 Minimize:minimize
 ContentCopy:content_copy
+ContentCut:content_cut
 Delete:delete
 Download:download
 Edit:edit
@@ -78,6 +79,7 @@ NewReleases:new_releases
 Logout:logout
 DesktopWindows:desktop_windows
 Computer:computer
+Devices:devices
 Monitor:monitor
 Memory:memory
 DeveloperBoard:developer_board
@@ -86,7 +88,9 @@ Storage:storage
 Speed:speed
 Usb:usb
 PlayArrow:play_arrow
+PlayCircle:play_circle
 Stop:stop
+StopCircle:stop_circle
 Pause:pause
 PowerSettingsNew:power_settings_new
 Power:power
@@ -95,6 +99,8 @@ PhotoCamera:photo_camera
 Album:album
 Cloud:cloud
 CloudOff:cloud_off
+Backup:backup
+Restore:restore
 DeployedCode:deployed_code
 RocketLaunch:rocket_launch
 Inventory2:inventory_2
@@ -127,6 +133,7 @@ Verified:verified
 Wifi:wifi
 Cable:cable
 ScreenShare:screen_share
+Cast:cast
 Dock:dock
 ReceiptLong:receipt_long
 TaskAlt:task_alt
@@ -199,17 +206,19 @@ def ligatures(font: TTFont) -> dict[str, str]:
 def extract(font_path: str, entries):
     source = TTFont(font_path)
     glyph_for_name = ligatures(source)
-    by_fill = {}
+    instances = {}
     output = []
     for export, material, fill in entries:
-        if fill not in by_fill:
-            by_fill[fill] = instantiateVariableFont(
+        weight = 400 if fill else 300
+        axes = (fill, weight)
+        if axes not in instances:
+            instances[axes] = instantiateVariableFont(
                 source,
-                {"FILL": fill, "GRAD": 0, "opsz": 24, "wght": 400},
+                {"FILL": fill, "GRAD": 0, "opsz": 24, "wght": weight},
                 inplace=False,
                 optimize=True,
             )
-        font = by_fill[fill]
+        font = instances[axes]
         glyph_name = glyph_for_name.get(material)
         if glyph_name is None:
             raise SystemExit(f"Material Symbols has no liga glyph for {material!r}")
@@ -233,7 +242,14 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path(__file__).with_name("manifest.json"))
     args = parser.parse_args()
     entries = [*requested(NAMES, 0), *requested(FILLED, 1)]
-    manifest = {"font": args.font, "axes": {"GRAD": 0, "opsz": 24, "wght": 400}, "icons": extract(args.font, entries)}
+    manifest = {
+        "font": args.font,
+        "axes": {
+            "outline": {"FILL": 0, "GRAD": 0, "opsz": 24, "wght": 300},
+            "filled": {"FILL": 1, "GRAD": 0, "opsz": 24, "wght": 400},
+        },
+        "icons": extract(args.font, entries),
+    }
     args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 

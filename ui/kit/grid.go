@@ -8,15 +8,22 @@ import (
 	"gioui.org/unit"
 )
 
+func columnCount(available, minWidth, gap, n int) int {
+	if n <= 0 {
+		return 0
+	}
+	minWidth = max(1, minWidth)
+	gap = max(0, gap)
+	return min(n, max(1, (available+gap)/(minWidth+gap)))
+}
+
 func Columns(gtx layout.Context, minCol, gap unit.Dp, n int, cell func(gtx layout.Context, i int) layout.Dimensions) layout.Dimensions {
 	if n <= 0 {
 		return layout.Dimensions{Size: gtx.Constraints.Constrain(image.Point{})}
 	}
 	available := gtx.Constraints.Max.X
-	minWidth := max(1, gtx.Dp(minCol))
 	gapPx := max(0, gtx.Dp(gap))
-	cols := max(1, (available+gapPx)/(minWidth+gapPx))
-	cols = min(cols, n)
+	cols := columnCount(available, gtx.Dp(minCol), gapPx, n)
 	colWidth := max(0, (available-gapPx*(cols-1))/cols)
 	y := 0
 	for first := 0; first < n; first += cols {
@@ -36,9 +43,9 @@ func Columns(gtx layout.Context, minCol, gap unit.Dp, n int, cell func(gtx layou
 			rowHeight = max(rowHeight, dims[col].Size.Y)
 		}
 		for col := range count {
-			off := op.Offset(image.Pt(col*(colWidth+gapPx), y)).Push(gtx.Ops)
+			offset := op.Offset(image.Pt(col*(colWidth+gapPx), y)).Push(gtx.Ops)
 			calls[col].Add(gtx.Ops)
-			off.Pop()
+			offset.Pop()
 		}
 		y += rowHeight
 		if first+count < n {
