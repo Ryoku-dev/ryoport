@@ -7,13 +7,12 @@ import (
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/widget"
 	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
 type filterButton struct {
-	widget.Clickable
+	Click
 	press anim.Tween
 }
 
@@ -82,11 +81,11 @@ func (f *Filters) Layout(gtx layout.Context, th *theme.Theme, labels []string, c
 				contentGTX.Constraints.Max.Y = gtx.Dp(32)
 				m := op.Record(gtx.Ops)
 				content := layout.Inset{Left: 13, Right: 13}.Layout(contentGTX, func(gtx layout.Context) layout.Dimensions {
-					parts := []layout.FlexChild{layout.Rigid(Text(th, th.T.Label, palette.ink, label))}
+					parts := []layout.FlexChild{layout.Rigid(rawText(th, th.T.Label, palette.ink, label))}
 					if counts != nil && i < len(counts) {
 						parts = append(parts,
 							layout.Rigid(layout.Spacer{Width: 6}.Layout),
-							layout.Rigid(Text(th, th.T.MonoSm, palette.ink, strconv.Itoa(counts[i]))),
+							layout.Rigid(rawText(th, th.T.MonoSm, palette.ink, strconv.Itoa(counts[i]))),
 						)
 					}
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, parts...)
@@ -103,7 +102,7 @@ func (f *Filters) Layout(gtx layout.Context, th *theme.Theme, labels []string, c
 				offset.Pop()
 				return layout.Dimensions{Size: size}
 			})
-			if gtx.Focused(&f.buttons[i]) {
+			if gtx.Focused(&f.buttons[i].Click.Clickable) {
 				FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, cut)
 			}
 			return dims

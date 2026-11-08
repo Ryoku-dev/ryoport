@@ -7,7 +7,6 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
-	"gioui.org/widget"
 
 	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/theme"
@@ -20,7 +19,7 @@ type placardEntry struct {
 	text    string
 	action  string
 	expires time.Time
-	button  widget.Clickable
+	button  Click
 	enter   anim.Tween
 	started bool
 	pending bool
@@ -109,7 +108,7 @@ func (p *Placards) Layout(gtx layout.Context, th *theme.Theme) layout.Dimensions
 			layout.Inset{Left: 16, Right: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return centerY(gtx, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-						layout.Flexed(1, Text(th, th.T.Body, th.R.OnSel, entry.text)),
+						layout.Flexed(1, rawText(th, th.T.Body, th.R.OnSel, entry.text)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							if entry.action == "" {
 								return layout.Dimensions{}
@@ -117,17 +116,23 @@ func (p *Placards) Layout(gtx layout.Context, th *theme.Theme) layout.Dimensions
 							return layout.Inset{Left: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return entry.button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 									actionHeight := gtx.Dp(32)
+									labelGTX := gtx
+									labelGTX.Constraints.Min = image.Point{}
+									labelGTX.Constraints.Max.X = max(0, labelGTX.Constraints.Max.X-gtx.Dp(26))
+									labelGTX.Constraints.Max.Y = actionHeight
 									labelRecord := op.Record(gtx.Ops)
-									labelDims := layout.Inset{Top: 8, Bottom: 8, Left: 13, Right: 13}.Layout(gtx, Text(th, th.T.Label, th.R.OnSel, entry.action))
+									labelDims := rawText(th, th.T.Label, th.R.OnSel, entry.action)(labelGTX)
 									labelCall := labelRecord.Stop()
-									width := labelDims.Size.X
-									actionRect := image.Rect(0, 0, width, actionHeight)
+									size := constrainMax(gtx, image.Pt(labelDims.Size.X+gtx.Dp(26), actionHeight))
+									actionRect := image.Rectangle{Max: size}
 									if entry.button.Hovered() {
 										FillCut(gtx.Ops, actionRect, gtx.Dp(th.Cut.Small), theme.WithAlpha(th.R.OnSel, .08))
 									}
 									StrokeCut(gtx.Ops, actionRect, gtx.Dp(th.Cut.Small), max(1, gtx.Dp(1)), th.R.OnSel)
+									labelOffset := op.Offset(image.Pt((size.X-labelDims.Size.X)/2, (size.Y-labelDims.Size.Y)/2)).Push(gtx.Ops)
 									labelCall.Add(gtx.Ops)
-									return layout.Dimensions{Size: actionRect.Max}
+									labelOffset.Pop()
+									return layout.Dimensions{Size: size}
 								})
 							})
 						}),

@@ -66,7 +66,7 @@ func (s *Search) Layout(gtx layout.Context, th *theme.Theme, placeholder, hint s
 		measureGTX := gtx
 		measureGTX.Constraints.Min = image.Point{}
 		m := op.Record(gtx.Ops)
-		hintDims := Label{Style: th.T.MonoSm, Color: disabledInk(measureGTX, th.R.Fg3), MaxLines: 1}.Layout(measureGTX, th, hint)
+		hintDims := rawText(th, th.T.MonoSm, disabledInk(measureGTX, th.R.Fg3), hint)(measureGTX)
 		hintCall := m.Stop()
 		right = hintDims.Size.X + gtx.Dp(18)
 		offset = op.Offset(image.Pt(size.X-right+gtx.Dp(4), (size.Y-hintDims.Size.Y)/2)).Push(gtx.Ops)

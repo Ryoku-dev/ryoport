@@ -52,8 +52,8 @@ func (s *Stepper) Layout(gtx layout.Context, th *theme.Theme, unit string) layou
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Gap: gtx.Dp(4)}.Layout(gtx,
-				layout.Rigid(Text(th, th.T.Mono, disabledInk(gtx, th.R.Fg), strconv.Itoa(s.Value))),
-				layout.Rigid(Text(th, th.T.Caption, disabledInk(gtx, th.R.Fg3), unit)),
+				layout.Rigid(rawText(th, th.T.Mono, disabledInk(gtx, th.R.Fg), strconv.Itoa(s.Value))),
+				layout.Rigid(rawText(th, th.T.Caption, disabledInk(gtx, th.R.Fg3), unit)),
 			)
 		}),
 		layout.Rigid(func(layout.Context) layout.Dimensions {

@@ -10,13 +10,12 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
-	"gioui.org/widget"
 	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
 type Tabs struct {
-	tabs     []widget.Clickable
+	tabs     []Click
 	widths   []int
 	x, width anim.Tween
 	changed  int
@@ -25,7 +24,7 @@ type Tabs struct {
 
 func (t *Tabs) ensure(n int) {
 	for len(t.tabs) < n {
-		t.tabs = append(t.tabs, widget.Clickable{})
+		t.tabs = append(t.tabs, Click{})
 	}
 	t.tabs = t.tabs[:n]
 }
@@ -37,8 +36,8 @@ func (t *Tabs) poll(gtx layout.Context) {
 		}
 		for {
 			e, ok := gtx.Event(
-				key.Filter{Focus: &t.tabs[i], Name: key.NameLeftArrow},
-				key.Filter{Focus: &t.tabs[i], Name: key.NameRightArrow},
+				key.Filter{Focus: &t.tabs[i].Clickable, Name: key.NameLeftArrow},
+				key.Filter{Focus: &t.tabs[i].Clickable, Name: key.NameRightArrow},
 			)
 			if !ok {
 				break
@@ -55,7 +54,7 @@ func (t *Tabs) poll(gtx layout.Context) {
 			}
 			if next != i {
 				t.changed, t.pending = next, true
-				gtx.Execute(key.FocusCmd{Tag: &t.tabs[next]})
+				gtx.Execute(key.FocusCmd{Tag: &t.tabs[next].Clickable})
 			}
 		}
 	}
@@ -139,9 +138,9 @@ func (t *Tabs) Layout(gtx layout.Context, th *theme.Theme, labels []string, sele
 			} else if t.tabs[i].Hovered() {
 				ink = th.R.Fg2
 			}
-			return layout.Center.Layout(gtx, Text(th, th.T.Label, disabledInk(gtx, ink), label))
+			return layout.Center.Layout(gtx, rawText(th, th.T.Label, disabledInk(gtx, ink), label))
 		})
-		if gtx.Focused(&t.tabs[i]) {
+		if gtx.Focused(&t.tabs[i].Clickable) {
 			FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, 0)
 		}
 		offset.Pop()

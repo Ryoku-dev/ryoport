@@ -4,14 +4,13 @@ import (
 	"image"
 
 	"gioui.org/layout"
-	"gioui.org/widget"
 
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
 type Picker struct {
-	button  widget.Clickable
+	button  Click
 	popover Popover
 	menu    Menu
 }
@@ -48,7 +47,7 @@ func (p *Picker) Layout(gtx layout.Context, th *theme.Theme, label string, optio
 				return layout.Inset{Left: 14, Right: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return centerY(gtx, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
-							layout.Flexed(1, Text(th, th.T.Body, th.R.Fg, value)),
+							layout.Flexed(1, rawText(th, th.T.Body, th.R.Fg, value)),
 							layout.Rigid(layout.Spacer{Width: 10}.Layout),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								size := gtx.Dp(20)

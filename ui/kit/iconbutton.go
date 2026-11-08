@@ -14,7 +14,7 @@ import (
 )
 
 type IconButton struct {
-	widget.Clickable
+	Click
 	Small, Busy bool
 	Notch       color.NRGBA
 	press       anim.Tween
@@ -22,9 +22,9 @@ type IconButton struct {
 
 func (b *IconButton) Clicked(gtx layout.Context) bool {
 	if !b.Busy {
-		return b.Clickable.Clicked(gtx)
+		return b.Click.Clicked(gtx)
 	}
-	for b.Clickable.Clicked(gtx) {
+	for b.Click.Clicked(gtx) {
 	}
 	return false
 }
@@ -41,7 +41,7 @@ func (b *IconButton) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind
 		interaction = interaction.Disabled()
 	}
 	var finalCut int
-	dims := b.Clickable.Layout(interaction, func(gtx layout.Context) layout.Dimensions {
+	dims := b.Click.Layout(interaction, func(gtx layout.Context) layout.Dimensions {
 		gtx.Source = original.Source
 		semantic.Button.Add(gtx.Ops)
 		semantic.DescriptionOp(desc).Add(gtx.Ops)
@@ -72,7 +72,7 @@ func (b *IconButton) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind
 		}
 		return layout.Dimensions{Size: r.Size()}
 	})
-	if original.Focused(&b.Clickable) {
+	if original.Focused(&b.Click.Clickable) {
 		FocusRing(original, th, image.Rectangle{Max: dims.Size}, finalCut)
 	}
 	return dims

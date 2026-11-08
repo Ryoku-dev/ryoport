@@ -6,14 +6,13 @@ import (
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/widget"
 	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
 type NewPlaque struct {
-	widget.Clickable
+	Click
 	press anim.Tween
 }
 
@@ -23,7 +22,7 @@ func (p *NewPlaque) Layout(gtx layout.Context, th *theme.Theme, compact, open bo
 		w, h, iconSize, cut = gtx.Dp(48), gtx.Dp(40), gtx.Dp(20), gtx.Dp(th.Cut.Small)
 	}
 	finalCut := cut
-	dims := p.Clickable.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	dims := p.Click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
 		semantic.LabelOp("New").Add(gtx.Ops)
 		p.press.Duration = th.Motion.Press
@@ -55,14 +54,14 @@ func (p *NewPlaque) Layout(gtx layout.Context, th *theme.Theme, compact, open bo
 						return icon.Layout(exact(gtx, image.Pt(iconSize, iconSize)), ink)
 					}),
 					layout.Rigid(layout.Spacer{Height: 2}.Layout),
-					layout.Rigid(Text(th, th.T.Label, ink, "New")),
+					layout.Rigid(rawText(th, th.T.Label, ink, "New")),
 				)
 			})
 			offset.Pop()
 		}
 		return layout.Dimensions{Size: r.Size()}
 	})
-	if gtx.Focused(&p.Clickable) {
+	if gtx.Focused(&p.Click.Clickable) {
 		FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, finalCut)
 	}
 	return dims

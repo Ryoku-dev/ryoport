@@ -13,7 +13,7 @@ import (
 )
 
 type SplitButton struct {
-	Main, More           widget.Clickable
+	Main, More           Click
 	mainPress, morePress anim.Tween
 }
 
@@ -58,7 +58,7 @@ func (s *SplitButton) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKin
 							layout.Rigid(layout.Spacer{Width: 8}.Layout),
 						)
 					}
-					children = append(children, layout.Rigid(Text(th, th.T.Label, palette.ink, label)))
+					children = append(children, layout.Rigid(rawText(th, th.T.Label, palette.ink, label)))
 					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)
 				})
 				call := m.Stop()
@@ -73,7 +73,7 @@ func (s *SplitButton) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKin
 				offset.Pop()
 				return layout.Dimensions{Size: size}
 			})
-			if gtx.Focused(&s.Main) {
+			if gtx.Focused(&s.Main.Clickable) {
 				pad := gtx.Dp(2)
 				strokeCutCorners(gtx.Ops, image.Rectangle{Max: dims.Size}.Inset(-pad), cut+pad, 0, 0, cut+pad, max(1, gtx.Dp(2)), th.R.Fg2)
 			}
@@ -104,7 +104,7 @@ func (s *SplitButton) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKin
 				offset.Pop()
 				return layout.Dimensions{Size: image.Pt(moreWidth, h)}
 			})
-			if gtx.Focused(&s.More) {
+			if gtx.Focused(&s.More.Clickable) {
 				pad := gtx.Dp(2)
 				strokeCutCorners(gtx.Ops, image.Rectangle{Max: dims.Size}.Inset(-pad), 0, cut+pad, cut+pad, 0, max(1, gtx.Dp(2)), th.R.Fg2)
 			}

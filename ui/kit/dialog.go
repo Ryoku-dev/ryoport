@@ -8,7 +8,6 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/paint"
-	"gioui.org/widget"
 
 	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/theme"
@@ -17,7 +16,7 @@ import (
 type Dialog struct {
 	Open bool
 
-	scrim    widget.Clickable
+	scrim    Click
 	enter    anim.Tween
 	wasOpen  bool
 	closed   bool

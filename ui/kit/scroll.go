@@ -10,6 +10,9 @@ import (
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
+// List is a vertical widget.List with Lithic's thin scroll thumb. Wheel and
+// touchpad scrolling are Gio's own: on Wayland one wheel notch moves about
+// 150 px and a touchpad follows the fingers.
 type List struct {
 	widget.List
 }

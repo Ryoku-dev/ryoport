@@ -3,17 +3,31 @@ package kit
 import (
 	"image"
 
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/widget"
 )
 
 type Popover struct {
 	Open        bool
-	dismiss     widget.Clickable
+	dismiss     Click
 	contentRect image.Rectangle
+	focusTag    int
+	outsideTag  int
+	wasOpen     bool
+}
+
+var activePopover *Popover
+
+func (p *Popover) close() {
+	p.Open = false
+	p.wasOpen = false
+	p.contentRect = image.Rectangle{}
+	if activePopover == p {
+		activePopover = nil
+	}
 }
 
 const overlayHostValue = "ryoport.ui.kit.overlay-host"
@@ -64,26 +78,52 @@ func clampCoordinate(v, lo, hi int) int {
 func (p *Popover) Layout(gtx layout.Context, anchor, content layout.Widget) layout.Dimensions {
 	anchorDims := anchor(gtx)
 	if !p.Open {
+		if activePopover == p {
+			activePopover = nil
+		}
+		p.wasOpen = false
 		p.contentRect = image.Rectangle{}
 		return anchorDims
 	}
 
+	opening := !p.wasOpen || activePopover != p
+	if activePopover != nil && activePopover != p {
+		activePopover.Open = false
+		activePopover.wasOpen = false
+		activePopover.contentRect = image.Rectangle{}
+	}
+	activePopover = p
+	p.wasOpen = true
+	event.Op(gtx.Ops, &p.focusTag)
+	if opening || !gtx.Focused(&p.focusTag) {
+		gtx.Execute(key.FocusCmd{Tag: &p.focusTag})
+	}
+
+	for {
+		e, ok := gtx.Event(pointer.Filter{Target: &p.outsideTag, Kinds: pointer.Press})
+		if !ok {
+			break
+		}
+		press, ok := e.(pointer.Event)
+		if ok && !press.Position.Round().In(p.contentRect) {
+			p.close()
+			return anchorDims
+		}
+	}
 	if p.dismiss.Clicked(gtx) {
 		history := p.dismiss.History()
 		if len(history) == 0 || !history[len(history)-1].Position.In(p.contentRect) {
-			p.Open = false
-			p.contentRect = image.Rectangle{}
+			p.close()
 			return anchorDims
 		}
 	}
 	for {
-		event, ok := gtx.Event(key.Filter{Name: key.NameEscape})
+		event, ok := gtx.Event(key.Filter{Focus: &p.focusTag, Name: key.NameEscape})
 		if !ok {
 			break
 		}
 		if event, ok := event.(key.Event); ok && event.State == key.Press {
-			p.Open = false
-			p.contentRect = image.Rectangle{}
+			p.close()
 			return anchorDims
 		}
 	}
@@ -107,6 +147,7 @@ func (p *Popover) Layout(gtx layout.Context, anchor, content layout.Widget) layo
 	catcherCtx := gtx
 	catcherCtx.Constraints = layout.Exact(window)
 	pass := pointer.PassOp{}.Push(gtx.Ops)
+	event.Op(gtx.Ops, &p.outsideTag)
 	p.dismiss.Layout(catcherCtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Dimensions{Size: window}
 	})

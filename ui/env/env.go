@@ -218,7 +218,10 @@ type Env struct {
 	Placards *kit.Placards
 	Class    Class
 	Now      time.Time
-	Files    Files
+	// Frame counts the window's frames, so a view can tell it was not drawn
+	// in the previous one and drop transient state such as open menus.
+	Frame uint64
+	Files Files
 	// Post runs f on the UI goroutine before the next frame and wakes the window.
 	Post func(f func())
 }

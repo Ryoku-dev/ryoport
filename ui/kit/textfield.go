@@ -94,18 +94,35 @@ func (f *TextField) Layout(gtx layout.Context, th *theme.Theme, label, placehold
 }
 
 func layoutEditor(gtx layout.Context, th *theme.Theme, editor *widget.Editor, style theme.TextStyle, placeholder string) layout.Dimensions {
+	size := gtx.Constraints.Constrain(gtx.Constraints.Max)
+	lineGTX := gtx
+	lineGTX.Constraints.Min = image.Pt(size.X, 0)
+	lineGTX.Constraints.Max = size
+
+	editorRecord := op.Record(gtx.Ops)
 	textCall := textMaterial(gtx.Ops, disabledInk(gtx, th.R.Fg))
 	selectionCall := textMaterial(gtx.Ops, disabledInk(gtx, th.R.Sel))
-	m := op.Record(gtx.Ops)
-	hint := Label{Style: style, Color: disabledInk(gtx, th.R.Fg3), MaxLines: 1}.Layout(gtx, th, placeholder)
-	hintCall := m.Stop()
-	editor.LineHeight = style.Line
-	dims := editor.Layout(gtx, th.Shaper, style.Face, style.Size, textCall, selectionCall)
+	editor.LineHeight = 0
+	editorDims := editor.Layout(lineGTX, th.Shaper, style.Face, style.Size, textCall, selectionCall)
+	editorCall := editorRecord.Stop()
+
+	editorY := max(0, (size.Y-editorDims.Size.Y)/2)
+	offset := op.Offset(image.Pt(0, editorY)).Push(gtx.Ops)
+	editorCall.Add(gtx.Ops)
+	offset.Pop()
+
 	if editor.Len() == 0 {
+		hintGTX := gtx
+		hintGTX.Constraints.Min = image.Point{}
+		hintGTX.Constraints.Max = size
+		hintRecord := op.Record(gtx.Ops)
+		hintDims := rawText(th, style, disabledInk(gtx, th.R.Fg3), placeholder)(hintGTX)
+		hintCall := hintRecord.Stop()
+		hintY := max(0, (size.Y-hintDims.Size.Y)/2)
+		offset = op.Offset(image.Pt(0, hintY)).Push(gtx.Ops)
 		hintCall.Add(gtx.Ops)
-		if hint.Size.X > dims.Size.X {
-			dims.Size.X = hint.Size.X
-		}
+		offset.Pop()
 	}
-	return dims
+	baseline := size.Y - editorY - editorDims.Size.Y + editorDims.Baseline
+	return layout.Dimensions{Size: size, Baseline: baseline}
 }

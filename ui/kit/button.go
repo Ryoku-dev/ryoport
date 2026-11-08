@@ -78,7 +78,7 @@ func drawButtonSurface(gtx layout.Context, th *theme.Theme, r image.Rectangle, c
 }
 
 type Button struct {
-	widget.Clickable
+	Click
 	Small, Busy bool
 	press       anim.Tween
 	width       int
@@ -86,9 +86,9 @@ type Button struct {
 
 func (b *Button) Clicked(gtx layout.Context) bool {
 	if !b.Busy {
-		return b.Clickable.Clicked(gtx)
+		return b.Click.Clicked(gtx)
 	}
-	for b.Clickable.Clicked(gtx) {
+	for b.Click.Clicked(gtx) {
 	}
 	return false
 }
@@ -106,7 +106,7 @@ func (b *Button) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind, ic
 	}
 
 	var finalCut int
-	dims := b.Clickable.Layout(interaction, func(gtx layout.Context) layout.Dimensions {
+	dims := b.Click.Layout(interaction, func(gtx layout.Context) layout.Dimensions {
 		gtx.Source = original.Source
 		semantic.Button.Add(gtx.Ops)
 		semantic.LabelOp(label).Add(gtx.Ops)
@@ -171,7 +171,7 @@ func (b *Button) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind, ic
 		}
 		return layout.Dimensions{Size: size, Baseline: content.Baseline + (size.Y-content.Size.Y)/2 + sink}
 	})
-	if original.Focused(&b.Clickable) {
+	if original.Focused(&b.Click.Clickable) {
 		FocusRing(original, th, image.Rectangle{Max: dims.Size}, finalCut)
 	}
 	return dims

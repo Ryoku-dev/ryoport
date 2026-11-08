@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/op/clip"
 	"gioui.org/text"
-	"gioui.org/widget"
 
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/ui/anim"
@@ -16,17 +17,17 @@ import (
 )
 
 type RowContent struct {
-	Mark         layout.Widget
-	Title, Facts string
-	FactsMono    bool
-	Claim, Proof string
-	Tone         model.Tone
-	Progress     float64
-	Action       layout.Widget
+	Mark, FactsWidget layout.Widget
+	Title, Facts      string
+	FactsMono         bool
+	Claim, Proof      string
+	Tone              model.Tone
+	Progress          float64
+	Action            layout.Widget
 }
 
 type Row struct {
-	widget.Clickable
+	Click
 	Pane color.NRGBA
 
 	hover     anim.Tween
@@ -53,7 +54,7 @@ func (r *Row) poll(gtx layout.Context) {
 	r.clickedOut = false
 	r.doubleOut = false
 	for {
-		click, ok := r.Clickable.Update(gtx)
+		click, ok := r.Click.Update(gtx)
 		if !ok {
 			break
 		}
@@ -108,7 +109,7 @@ func (r *Row) Layout(gtx layout.Context, th *theme.Theme, c RowContent, selected
 	}
 	rowCtx := gtx
 	rowCtx.Constraints = layout.Exact(image.Pt(w, h))
-	dims := r.Clickable.Layout(rowCtx, func(gtx layout.Context) layout.Dimensions {
+	dims := r.Click.Layout(rowCtx, func(gtx layout.Context) layout.Dimensions {
 		hot := r.Hovered() || focused
 		if hot {
 			r.hover.Set(gtx, 1)
@@ -153,11 +154,39 @@ func (r *Row) Layout(gtx layout.Context, th *theme.Theme, c RowContent, selected
 				children := []layout.FlexChild{
 					layout.Rigid(Text(th, th.T.Row, titleInk, c.Title)),
 				}
-				if c.Facts != "" {
-					style := th.T.Caption
-					if c.FactsMono {
-						style = th.T.Mono
-					}
+				style := th.T.Caption
+				if c.FactsMono {
+					style = th.T.Mono
+				}
+				if c.FactsWidget != nil {
+					children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						slotGTX := gtx
+						slotGTX.Constraints.Min = image.Point{}
+
+						var measureOps op.Ops
+						measureGTX := slotGTX
+						measureGTX.Ops = &measureOps
+						reference := rawText(th, style, quietInk, "Ag")(measureGTX)
+						slotGTX.Constraints.Max.Y = min(slotGTX.Constraints.Max.Y, reference.Size.Y)
+
+						record := op.Record(gtx.Ops)
+						dims := c.FactsWidget(slotGTX)
+						call := record.Stop()
+						dims.Size = slotGTX.Constraints.Constrain(dims.Size)
+						baselineY := reference.Size.Y - reference.Baseline
+						childBaselineY := dims.Size.Y - dims.Baseline
+						y := baselineY - childBaselineY
+						stack := clip.Rect(image.Rect(0, 0, slotGTX.Constraints.Max.X, reference.Size.Y)).Push(gtx.Ops)
+						offset := op.Offset(image.Pt(0, y)).Push(gtx.Ops)
+						call.Add(gtx.Ops)
+						offset.Pop()
+						stack.Pop()
+						return layout.Dimensions{
+							Size:     image.Pt(dims.Size.X, reference.Size.Y),
+							Baseline: reference.Baseline,
+						}
+					}))
+				} else if c.Facts != "" {
 					children = append(children, layout.Rigid(Text(th, style, quietInk, c.Facts)))
 				}
 				return layout.Flex{Axis: layout.Vertical, Alignment: layout.Start}.Layout(gtx, children...)

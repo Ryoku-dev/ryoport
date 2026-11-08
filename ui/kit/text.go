@@ -47,10 +47,8 @@ func Text(th *theme.Theme, style theme.TextStyle, c color.NRGBA, s string) layou
 func rawText(th *theme.Theme, style theme.TextStyle, c color.NRGBA, s string) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		label := widget.Label{
-			MaxLines:        1,
-			Truncator:       "…",
-			LineHeight:      style.Line,
-			LineHeightScale: 1,
+			MaxLines:  1,
+			Truncator: "…",
 		}
 		return label.Layout(gtx, th.Shaper, style.Face, style.Size, s, textMaterial(gtx.Ops, c))
 	}

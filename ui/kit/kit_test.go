@@ -17,6 +17,30 @@ func testContext(width, height int) layout.Context {
 	}
 }
 
+func TestClickAfterLayout(t *testing.T) {
+	gtx := testContext(40, 40)
+	var click Click
+	click.Clickable.Click()
+	click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: image.Pt(40, 40)}
+	})
+	if !click.Clicked(gtx) {
+		t.Fatal("click delivered before Layout was not available after Layout")
+	}
+	if click.Clicked(gtx) {
+		t.Fatal("latched click was delivered more than once")
+	}
+}
+
+func TestClickLatchPreservesDoubleClick(t *testing.T) {
+	gtx := testContext(40, 40)
+	click := Click{pending: 1, pendingDouble: 1}
+	event, ok := click.Update(gtx)
+	if !ok || event.NumClicks != 2 {
+		t.Fatalf("latched click = %#v, %v; want a double click", event, ok)
+	}
+}
+
 func TestCutPoints(t *testing.T) {
 	got := cutPoints(image.Rect(10, 20, 110, 70), 5, 10, 15, 20)
 	want := [...]f32.Point{
@@ -105,7 +129,7 @@ func TestFiltersChanged(t *testing.T) {
 	gtx := testContext(200, 40)
 	var filters Filters
 	filters.ensure(3)
-	filters.buttons[1].Click()
+	filters.buttons[1].Click.Clickable.Click()
 	got, ok := filters.Changed(gtx)
 	if !ok || got != 1 {
 		t.Fatalf("Changed() = %d, %v; want 1, true", got, ok)

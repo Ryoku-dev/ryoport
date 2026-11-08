@@ -20,7 +20,7 @@ type MenuItem struct {
 }
 
 type Menu struct {
-	clicks   []widget.Clickable
+	clicks   []Click
 	disabled []bool
 	divider  []bool
 	pending  []bool
@@ -28,7 +28,7 @@ type Menu struct {
 
 func (m *Menu) prepare(items []MenuItem) {
 	if len(m.clicks) != len(items) {
-		clicks := make([]widget.Clickable, len(items))
+		clicks := make([]Click, len(items))
 		copy(clicks, m.clicks)
 		m.clicks = clicks
 	}
@@ -101,11 +101,11 @@ func (m *Menu) Layout(gtx layout.Context, th *theme.Theme, items []MenuItem) lay
 									layout.Rigid(layout.Spacer{Width: 12}.Layout),
 								)
 							}
-							children = append(children, layout.Flexed(1, Text(th, th.T.Label, ink, item.Label)))
+							children = append(children, layout.Flexed(1, rawText(th, th.T.Label, ink, item.Label)))
 							if item.Shortcut != "" {
 								children = append(children,
 									layout.Rigid(layout.Spacer{Width: unit.Dp(13)}.Layout),
-									layout.Rigid(Text(th, th.T.MonoSm, th.R.Fg3, item.Shortcut)),
+									layout.Rigid(rawText(th, th.T.MonoSm, th.R.Fg3, item.Shortcut)),
 								)
 							}
 							return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children...)

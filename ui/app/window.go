@@ -34,6 +34,7 @@ type shell struct {
 	window *gioapp.Window
 	store  *store.Store
 	post   func(func())
+	frame  uint64
 
 	theme *theme.Theme
 	files env.Files
@@ -150,6 +151,7 @@ func (s *shell) Frame(frame gioapp.FrameEvent, ops *op.Ops, snapshot *store.Snap
 		return
 	}
 	s.applySettings(snapshot)
+	s.frame++
 
 	e := &env.Env{
 		Th:       s.theme,
@@ -160,15 +162,19 @@ func (s *shell) Frame(frame gioapp.FrameEvent, ops *op.Ops, snapshot *store.Snap
 		Placards: &s.overlays.placards,
 		Class:    windowClass(frame.Metric.PxToDp(gtx.Constraints.Max.X)),
 		Now:      frame.Now,
+		Frame:    s.frame,
 		Files:    s.files,
 		Post:     s.post,
 	}
 
-	s.keys.Layout(gtx, e, s)
 	beforeNavigation := navigationStamp(s.nav)
 	paint.Fill(gtx.Ops, e.Th.R.Ground)
 	s.Layout(gtx, e)
 	s.overlays.Layout(gtx, e, s)
+	// Gio hands a key to the first caller that asks for it in a frame, so the
+	// window's shortcuts ask last: an open menu, the palette or a focused field
+	// takes Escape and Enter first, and only what they leave reaches Back.
+	s.keys.Layout(gtx, e, s)
 	if navigationStamp(s.nav) != beforeNavigation {
 		gtx.Execute(op.InvalidateCmd{})
 	}
