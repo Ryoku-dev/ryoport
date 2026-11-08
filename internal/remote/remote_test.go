@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -140,6 +142,133 @@ func TestParseTunnelSpec(t *testing.T) {
 	for _, spec := range []string{"", "X:22", "L:22:host", "L:0:host:22", "L:22:bad;host:80", "D:65536", "D:host:1:2"} {
 		if _, _, err := ParseTunnelSpec(spec); err == nil {
 			t.Errorf("ParseTunnelSpec(%q) accepted", spec)
+		}
+	}
+}
+
+func TestAliasWithPlusCanBeSavedListedAndRemoved(t *testing.T) {
+	home := setTestHome(t)
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ssh := "#!/bin/sh\nprintf 'hostname mail.example\\nuser tester\\nport 22\\n'\n"
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(ssh), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	manager := New()
+	const alias = "mail+work"
+	if err := manager.Save(HostInput{Alias: alias, HostName: "mail.example", User: "tester", Port: 22}); err != nil {
+		t.Fatal(err)
+	}
+	hosts, err := manager.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hosts) != 1 || hosts[0].Alias != alias {
+		t.Fatalf("hosts = %#v, want alias %q", hosts, alias)
+	}
+	if err := manager.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	hosts, err = manager.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hosts) != 0 {
+		t.Fatalf("hosts after remove = %#v, want none", hosts)
+	}
+}
+
+func TestConnectCommandUsesResolvedTerminal(t *testing.T) {
+	tests := []struct {
+		name        string
+		executables []string
+		want        string
+	}{
+		{name: "kitty direct", executables: []string{"kitty"}, want: "kitten"},
+		{name: "xdg terminal exec", executables: []string{"xdg-terminal-exec", "kitty"}, want: "ssh"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			home := setTestHome(t)
+			bin := filepath.Join(home, "bin")
+			if err := os.MkdirAll(bin, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range test.executables {
+				if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("PATH", bin)
+			t.Setenv("TERMINAL", "")
+			command := New().ConnectCommand("mail+work")
+			if len(command) == 0 || command[0] != test.want {
+				t.Fatalf("ConnectCommand = %v, want %s command", command, test.want)
+			}
+		})
+	}
+}
+
+func TestTunnelWritesAndPruningDoNotLoseRecords(t *testing.T) {
+	setTestHome(t)
+	manager := New()
+	manager.tunnelAlive = func(pid int) bool { return pid > 0 }
+	if err := writeTunnels([]Tunnel{{ID: "dead", Alias: "old", Pid: 0}}); err != nil {
+		t.Fatal(err)
+	}
+
+	const count = 64
+	start := make(chan struct{})
+	errs := make(chan error, count+1)
+	var workers sync.WaitGroup
+	workers.Add(count + 1)
+	for i := 1; i <= count; i++ {
+		go func(pid int) {
+			defer workers.Done()
+			<-start
+			errs <- manager.recordTunnel(Tunnel{ID: fmt.Sprintf("tunnel-%d", pid), Alias: "mail+work", Pid: pid})
+		}(i)
+	}
+	go func() {
+		defer workers.Done()
+		<-start
+		for range count {
+			_, err := manager.Tunnels("")
+			if err != nil {
+				errs <- err
+				return
+			}
+		}
+		errs <- nil
+	}()
+	close(start)
+	workers.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tunnels, err := manager.Tunnels("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tunnels) != count {
+		t.Fatalf("tunnel count = %d, want %d", len(tunnels), count)
+	}
+	seen := make(map[string]bool, count)
+	for _, tunnel := range tunnels {
+		seen[tunnel.ID] = true
+	}
+	for i := 1; i <= count; i++ {
+		id := fmt.Sprintf("tunnel-%d", i)
+		if !seen[id] {
+			t.Errorf("missing %s", id)
 		}
 	}
 }

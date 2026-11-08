@@ -14,7 +14,10 @@ import (
 	"strings"
 )
 
-var keyRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var (
+	keyRe        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	quotedItemRe = regexp.MustCompile(`"[^"]*"`)
+)
 
 // ErrUnsafe is returned for a value quickemu's shell would expand.
 var ErrUnsafe = errors.New("value contains a character the config can't hold")
@@ -84,12 +87,10 @@ func (c *Conf) List(key string) []string {
 		}
 		return nil
 	}
-	var out []string
-	for _, f := range strings.Fields(v[1 : len(v)-1]) {
-		f = strings.Trim(f, `"'`)
-		if f != "" {
-			out = append(out, f)
-		}
+	matches := quotedItemRe.FindAllString(v[1:len(v)-1], -1)
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, match[1:len(match)-1])
 	}
 	return out
 }
@@ -129,7 +130,7 @@ func (c *Conf) SetList(key string, vals []string) error {
 	}
 	quoted := make([]string, len(vals))
 	for i, v := range vals {
-		if !ValidValue(v) || strings.ContainsAny(v, " \t()") {
+		if !ValidValue(v) {
 			return fmt.Errorf("%s: %w", key, ErrUnsafe)
 		}
 		quoted[i] = `"` + v + `"`

@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,11 +13,12 @@ import (
 )
 
 type Log struct {
-	mu        sync.RWMutex
-	path      string
-	keep      int
-	lineCount int
-	events    []model.Event
+	mu             sync.RWMutex
+	path           string
+	keep           int
+	lineCount      int
+	needsSeparator bool
+	events         []model.Event
 }
 
 func Open(path string, keep int) (*Log, error) {
@@ -43,11 +43,11 @@ func Open(path string, keep int) (*Log, error) {
 		if len(scanner.Bytes()) == 0 {
 			continue
 		}
+		log.lineCount++
 		var event model.Event
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			return nil, fmt.Errorf("decode event line %d: %w", log.lineCount+1, err)
+			continue
 		}
-		log.lineCount++
 		log.events = append(log.events, event)
 		if len(log.events) > keep {
 			copy(log.events, log.events[len(log.events)-keep:])
@@ -56,6 +56,17 @@ func Open(path string, keep int) (*Log, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > 0 {
+		var last [1]byte
+		if _, err := file.ReadAt(last[:], info.Size()-1); err != nil {
+			return nil, err
+		}
+		log.needsSeparator = last[0] != '\n'
 	}
 	return log, nil
 }
@@ -78,6 +89,13 @@ func (log *Log) Append(event model.Event) error {
 	if err := file.Chmod(0o600); err != nil {
 		file.Close()
 		return err
+	}
+	if log.needsSeparator {
+		if _, err := file.Write([]byte{'\n'}); err != nil {
+			file.Close()
+			return err
+		}
+		log.needsSeparator = false
 	}
 	if _, err := file.Write(data); err != nil {
 		file.Close()
@@ -158,6 +176,7 @@ func (log *Log) rewriteLocked() error {
 	if err := os.Rename(name, log.path); err != nil {
 		return err
 	}
+	log.needsSeparator = false
 	log.lineCount = len(log.events)
 	return nil
 }

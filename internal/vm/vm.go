@@ -82,6 +82,44 @@ func (m *Manager) ConfPath(name string) string { return filepath.Join(m.Root, na
 // Dir returns the conventional per-machine directory.
 func (m *Manager) Dir(name string) string { return filepath.Join(m.Root, name) }
 
+func (m *Manager) resolvedRoot() (root, resolved string, err error) {
+	root, err = filepath.Abs(m.Root)
+	if err != nil {
+		return "", "", err
+	}
+	resolved, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", "", err
+	}
+	return root, resolved, nil
+}
+
+func confPathForExistingName(name, root, resolvedRoot string) (string, error) {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("invalid name: '%s'", name)
+	}
+	path := filepath.Join(root, name+".conf")
+	if !withinRoot(root, path) {
+		return "", fmt.Errorf("invalid name: '%s'", name)
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	if !withinRoot(resolvedRoot, resolvedPath) {
+		return "", fmt.Errorf("VM config for '%s' escapes the VM root", name)
+	}
+	return path, nil
+}
+
+func (m *Manager) existingConfPath(name string) (string, error) {
+	root, resolvedRoot, err := m.resolvedRoot()
+	if err != nil {
+		return "", err
+	}
+	return confPathForExistingName(name, root, resolvedRoot)
+}
+
 // DiskPath resolves disk_img exactly as quickemu does for the compatible root.
 func (m *Manager) DiskPath(name string) (string, error) {
 	conf, _, err := m.readConf(name)
@@ -117,10 +155,13 @@ func (m *Manager) Sockets(name string) (monitor, agent, pid string) {
 }
 
 func (m *Manager) readConf(name string) (*qconf.Conf, string, error) {
-	if !ValidName(name) {
-		return nil, "", fmt.Errorf("invalid name: '%s'", name)
+	path, err := m.existingConfPath(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, "", fmt.Errorf("no VM named '%s'", name)
 	}
-	path := m.ConfPath(name)
+	if err != nil {
+		return nil, "", err
+	}
 	conf, err := qconf.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, "", fmt.Errorf("no VM named '%s'", name)

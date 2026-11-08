@@ -40,6 +40,21 @@ func TestListReadsBashArrays(t *testing.T) {
 	}
 }
 
+func TestListRoundTripPreservesSpaces(t *testing.T) {
+	values := []string{"USB keyboard", "two words", "plain"}
+	c := Parse([]byte(`usb_names=("already spaced" "plain")`))
+	if got := c.List("usb_names"); !slices.Equal(got, []string{"already spaced", "plain"}) {
+		t.Fatalf("parsed list = %#v", got)
+	}
+	if err := c.SetList("usb_names", values); err != nil {
+		t.Fatal(err)
+	}
+	roundTrip := Parse(c.Bytes())
+	if got := roundTrip.List("usb_names"); !slices.Equal(got, values) {
+		t.Fatalf("round-trip list = %#v, want %#v", got, values)
+	}
+}
+
 func TestEditsPreserveEverythingElse(t *testing.T) {
 	c := Parse([]byte(sample + "guest_os=\"windows\"\n"))
 	if err := c.Set("guest_os", "macos"); err != nil {
@@ -71,8 +86,10 @@ func TestRejectsValuesTheShellWouldExpand(t *testing.T) {
 			t.Fatalf("Set(%q) = %v, want ErrUnsafe", v, err)
 		}
 	}
-	if err := c.SetList("usb_devices", []string{"a b"}); !errors.Is(err, ErrUnsafe) {
-		t.Fatalf("list item with a space = %v", err)
+	for _, v := range []string{`a"b`, "a\nb"} {
+		if err := c.SetList("usb_devices", []string{v}); !errors.Is(err, ErrUnsafe) {
+			t.Fatalf("SetList(%q) = %v, want ErrUnsafe", v, err)
+		}
 	}
 	if err := c.Set("bad-key", "x"); err == nil {
 		t.Fatal("bad key accepted")

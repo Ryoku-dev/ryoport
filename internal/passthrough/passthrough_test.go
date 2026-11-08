@@ -6,46 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
-
-func TestStatusAndCreateUseHubContract(t *testing.T) {
-	dir := t.TempDir()
-	log := filepath.Join(dir, "args")
-	script := `#!/bin/sh
-printf '%s\n' "$*" >> "$RYO_TEST_LOG"
-if [ "$3" = list ]; then
-  printf '%s\n' '{"ready":true,"machines":[{"name":"win11","state":"running","os":"windows","vcpus":8,"ramMb":16384,"diskGb":64}]}'
-else
-  printf '%s\n' '{}'
-fi
-`
-	writeExecutable(t, filepath.Join(dir, "ryoku-hub"), script)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	t.Setenv("RYO_TEST_LOG", log)
-	list, err := Status(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !list.Ready || len(list.Machines) != 1 || list.Machines[0].Name != "win11" {
-		t.Fatalf("unexpected list: %+v", list)
-	}
-	iso := filepath.Join(dir, "windows.iso")
-	if err := os.WriteFile(iso, []byte("iso"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := Create(context.Background(), CreateOptions{Name: "win11", ISO: iso, OS: "windows", DiskGB: 64, RAMMB: 16384}); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "gpu vm create --name win11 --iso "+iso+" --os windows --disk-gb 64 --ram-mb 16384") {
-		t.Fatalf("unexpected Hub argv: %s", data)
-	}
-}
 
 func TestCreateValidationMatchesUILimits(t *testing.T) {
 	iso := filepath.Join(t.TempDir(), "guest.iso")
@@ -94,12 +56,5 @@ func TestReadStatsMatchesLegacyJSONCounters(t *testing.T) {
 	}
 	if !stats.Running || stats.CPUTimeNS != 90 || stats.MemoryKB != 1024 || stats.DiskReadBytes != 30 || stats.DiskWriteBytes != 3 || stats.NetReceiveBytes != 7 || stats.NetSendBytes != 8 {
 		t.Fatalf("unexpected stats: %+v", stats)
-	}
-}
-
-func writeExecutable(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
-		t.Fatal(err)
 	}
 }

@@ -16,11 +16,19 @@ import (
 
 // Terminal opens argv in a terminal window identified by class and title.
 func Terminal(argv []string, class, title string) error {
+	term, known, err := ResolveTerminal()
+	if err != nil {
+		return err
+	}
+	return TerminalResolved(term, known, argv, class, title)
+}
+
+// TerminalResolved opens argv using a terminal returned by ResolveTerminal.
+func TerminalResolved(term string, known bool, argv []string, class, title string) error {
 	if err := validArgv(argv); err != nil {
 		return err
 	}
-	term, known, err := terminal()
-	if err != nil {
+	if err := validArgv([]string{term}); err != nil {
 		return err
 	}
 	return Detached(terminalArgv(term, known, argv, class, title), nil, nil)
@@ -129,7 +137,8 @@ func OpenSFTP(user, host string, port int) error {
 	return Detached([]string{name, u.String()}, nil, nil)
 }
 
-func terminal() (path string, known bool, err error) {
+// ResolveTerminal returns the executable and whether its argument syntax is known.
+func ResolveTerminal() (path string, known bool, err error) {
 	if configured := os.Getenv("TERMINAL"); configured != "" {
 		if strings.ContainsAny(configured, "\x00\r\n") {
 			return "", false, errors.New("invalid TERMINAL")

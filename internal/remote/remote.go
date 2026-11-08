@@ -222,9 +222,12 @@ type meta struct {
 	Auth   string   `json:"auth,omitempty"`
 }
 
-type Manager struct{}
+type Manager struct {
+	tunnelsMu   sync.Mutex
+	tunnelAlive func(int) bool
+}
 
-func New() *Manager { return &Manager{} }
+func New() *Manager { return &Manager{tunnelAlive: alive} }
 
 func (m *Manager) List(ctx context.Context) ([]Host, error) {
 	aliases := listAliases()
@@ -383,30 +386,34 @@ func (m *Manager) PVEAction(ctx context.Context, alias, node, kind string, vmid 
 }
 
 func (m *Manager) Connect(alias string) error {
-	command := m.ConnectCommand(alias)
-	if len(command) == 0 {
+	if !ValidAlias(alias) {
 		return errors.New("bad alias")
 	}
-	command, err := m.withPasswordEnv(alias, command)
+	term, known, err := launch.ResolveTerminal()
 	if err != nil {
 		return err
 	}
-	return launch.Terminal(command, sshClass, "ssh: "+alias)
+	command := m.connectCommand(alias, term)
+	command, err = m.withPasswordEnv(alias, command)
+	if err != nil {
+		return err
+	}
+	return launch.TerminalResolved(term, known, command, sshClass, "ssh: "+alias)
 }
 
 func (m *Manager) ConnectCommand(alias string) []string {
 	if !ValidAlias(alias) {
 		return nil
 	}
-	opts := []string{"-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", alias}
-	term := os.Getenv("TERMINAL")
-	if term == "" {
-		if _, err := exec.LookPath("xdg-terminal-exec"); err != nil {
-			if _, err := exec.LookPath("kitty"); err == nil {
-				term = "kitty"
-			}
-		}
+	term, _, err := launch.ResolveTerminal()
+	if err != nil {
+		return nil
 	}
+	return m.connectCommand(alias, term)
+}
+
+func (m *Manager) connectCommand(alias, term string) []string {
+	opts := []string{"-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", alias}
 	if filepath.Base(term) == "kitty" && readSidecar()[alias].Auth != "password" {
 		return append([]string{"kitten", "ssh"}, opts...)
 	}
@@ -648,8 +655,10 @@ func (m *Manager) Tunnels(alias string) ([]Tunnel, error) {
 	if alias != "" && !ValidAlias(alias) {
 		return nil, errors.New("bad alias")
 	}
+	m.tunnelsMu.Lock()
+	defer m.tunnelsMu.Unlock()
 	original := readTunnels()
-	live := pruneTunnels(original)
+	live := m.pruneTunnelsLocked(original)
 	if len(live) != len(original) {
 		if err := writeTunnels(live); err != nil {
 			return nil, err
@@ -706,17 +715,25 @@ func (m *Manager) OpenTunnel(alias, spec string) (Tunnel, error) {
 		return Tunnel{}, err
 	}
 	tunnel := Tunnel{ID: id, Alias: alias, Kind: kind, Spec: spec, Pid: pid, Opened: time.Now().Unix()}
-	if err := writeTunnels(append(pruneTunnels(readTunnels()), tunnel)); err != nil {
+	if err := m.recordTunnel(tunnel); err != nil {
 		killGroup(pid)
 		return Tunnel{}, err
 	}
 	return tunnel, nil
 }
 
+func (m *Manager) recordTunnel(tunnel Tunnel) error {
+	m.tunnelsMu.Lock()
+	defer m.tunnelsMu.Unlock()
+	return writeTunnels(append(m.pruneTunnelsLocked(readTunnels()), tunnel))
+}
+
 func (m *Manager) CloseTunnel(id string) error {
 	if id == "" || strings.ContainsAny(id, "\x00\r\n") {
 		return errors.New("invalid tunnel id")
 	}
+	m.tunnelsMu.Lock()
+	defer m.tunnelsMu.Unlock()
 	tunnels := readTunnels()
 	index := -1
 	for i, tunnel := range tunnels {
@@ -730,13 +747,15 @@ func (m *Manager) CloseTunnel(id string) error {
 	}
 	killGroup(tunnels[index].Pid)
 	kept := append(tunnels[:index:index], tunnels[index+1:]...)
-	return writeTunnels(pruneTunnels(kept))
+	return writeTunnels(m.pruneTunnelsLocked(kept))
 }
 
 func (m *Manager) CloseAll(alias string) error {
 	if alias != "" && !ValidAlias(alias) {
 		return errors.New("bad alias")
 	}
+	m.tunnelsMu.Lock()
+	defer m.tunnelsMu.Unlock()
 	tunnels := readTunnels()
 	kept := make([]Tunnel, 0, len(tunnels))
 	for _, tunnel := range tunnels {
@@ -746,11 +765,11 @@ func (m *Manager) CloseAll(alias string) error {
 		}
 		kept = append(kept, tunnel)
 	}
-	return writeTunnels(pruneTunnels(kept))
+	return writeTunnels(m.pruneTunnelsLocked(kept))
 }
 
 func ValidAlias(value string) bool {
-	return validHost(value) && !strings.HasPrefix(value, "-")
+	return value != "" && !strings.HasPrefix(value, "-") && !strings.ContainsAny(value, " \t\r\n")
 }
 
 // ParseTunnelSpec validates a forward and returns its kind and ssh argument.
@@ -1479,10 +1498,14 @@ func nonNil(values []string) []string {
 
 func alive(pid int) bool { return pid > 0 && syscall.Kill(pid, 0) == nil }
 
-func pruneTunnels(tunnels []Tunnel) []Tunnel {
+func (m *Manager) pruneTunnelsLocked(tunnels []Tunnel) []Tunnel {
+	isAlive := m.tunnelAlive
+	if isAlive == nil {
+		isAlive = alive
+	}
 	live := make([]Tunnel, 0, len(tunnels))
 	for _, tunnel := range tunnels {
-		if alive(tunnel.Pid) {
+		if isAlive(tunnel.Pid) {
 			live = append(live, tunnel)
 		}
 	}

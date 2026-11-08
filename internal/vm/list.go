@@ -20,7 +20,11 @@ func (m *Manager) List(ctx context.Context) ([]Machine, error) {
 	if err := xdg.EnsureDir(m.Root); err != nil {
 		return nil, err
 	}
-	paths, err := filepath.Glob(filepath.Join(m.Root, "*.conf"))
+	root, resolvedRoot, err := m.resolvedRoot()
+	if err != nil {
+		return nil, err
+	}
+	paths, err := filepath.Glob(filepath.Join(root, "*.conf"))
 	if err != nil {
 		return nil, err
 	}
@@ -30,13 +34,22 @@ func (m *Manager) List(ctx context.Context) ([]Machine, error) {
 			return nil, err
 		}
 		name := strings.TrimSuffix(filepath.Base(path), ".conf")
-		conf, err := qconf.Read(path)
+		if name == "" {
+			continue
+		}
+		confPath, err := confPathForExistingName(name, root, resolvedRoot)
 		if err != nil {
-			return nil, err
+			machines = append(machines, machineDefaults(name, nil))
+			continue
+		}
+		conf, err := qconf.Read(confPath)
+		if err != nil {
+			machines = append(machines, machineDefaults(name, nil))
+			continue
 		}
 		machine, err := m.machine(name, conf)
 		if err != nil {
-			return nil, err
+			machine = machineDefaults(name, conf)
 		}
 		machines = append(machines, machine)
 	}
@@ -90,45 +103,49 @@ func (m *Manager) machine(name string, conf *qconf.Conf) (Machine, error) {
 	if err != nil {
 		return Machine{}, err
 	}
-	isRunning := running(pid)
-	display := conf.Get("display")
-	if display == "" {
-		display = "gtk"
-	}
-	cores := conf.Get("cpu_cores")
-	if cores == "" {
-		cores = "auto"
-	}
-	ram := conf.Get("ram")
-	if ram == "" {
-		ram = "auto"
-	}
-	guest := conf.Get("guest_os")
-	if guest == "" {
-		guest = "linux"
-	}
-	machine := Machine{
-		Name:       name,
-		Guest:      guest,
-		OS:         conf.Get("ryovm_os"),
-		Display:    display,
-		Cores:      cores,
-		RAM:        ram,
-		Disk:       conf.Get("disk_size"),
-		DiskUsed:   allocatedBytes(dir),
-		Running:    isRunning,
-		Installed:  pathExists(disk),
-		Disposable: isRunning && pathExists(filepath.Join(dir, name+".disposable")),
-		Sealed:     conf.Get("ryovm_sealed") == "1" && pathExists(disk),
-		TPM:        conf.Get("tpm") == "on",
-		SecureBoot: conf.Get("secureboot") == "on",
-		UEFI:       conf.Get("boot") != "legacy",
-	}
-	if isRunning {
+	machine := machineDefaults(name, conf)
+	machine.Running = running(pid)
+	machine.DiskUsed = allocatedBytes(dir)
+	machine.Installed = pathExists(disk)
+	machine.Disposable = machine.Running && pathExists(filepath.Join(dir, name+".disposable"))
+	machine.Sealed = conf.Get("ryovm_sealed") == "1" && machine.Installed
+	if machine.Running {
 		machine.SSH = portOf(ports, "ssh")
 		machine.Spice = spiceTarget(ports, dir)
 	}
 	return machine, nil
+}
+
+func machineDefaults(name string, conf *qconf.Conf) Machine {
+	machine := Machine{
+		Name:    name,
+		Guest:   "linux",
+		Display: "gtk",
+		Cores:   "auto",
+		RAM:     "auto",
+		UEFI:    true,
+	}
+	if conf == nil {
+		return machine
+	}
+	if value := conf.Get("guest_os"); value != "" {
+		machine.Guest = value
+	}
+	if value := conf.Get("display"); value != "" {
+		machine.Display = value
+	}
+	if value := conf.Get("cpu_cores"); value != "" {
+		machine.Cores = value
+	}
+	if value := conf.Get("ram"); value != "" {
+		machine.RAM = value
+	}
+	machine.OS = conf.Get("ryovm_os")
+	machine.Disk = conf.Get("disk_size")
+	machine.TPM = conf.Get("tpm") == "on"
+	machine.SecureBoot = conf.Get("secureboot") == "on"
+	machine.UEFI = conf.Get("boot") != "legacy"
+	return machine
 }
 
 func pathExists(path string) bool {

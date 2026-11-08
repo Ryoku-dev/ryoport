@@ -32,7 +32,14 @@ func RuntimeDir() string { return env("XDG_RUNTIME_DIR", CacheHome()) }
 func Home() string { return home() }
 
 // VMRoot holds quickemu machines: <name>.conf next to a <name>/ directory.
-func VMRoot() string { return env("RYOVM_HOME", filepath.Join(DataHome(), "ryoku", "vms")) }
+func VMRoot() string {
+	if value := os.Getenv("RYOVM_HOME"); value != "" {
+		if absolute, err := filepath.Abs(value); err == nil {
+			return absolute
+		}
+	}
+	return filepath.Join(DataHome(), "ryoku", "vms")
+}
 
 // ImagesDir holds shared cloud bases, the VirtIO CD and templates.
 func ImagesDir() string { return filepath.Join(VMRoot(), ".images") }

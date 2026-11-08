@@ -103,11 +103,13 @@ func (m *Manager) Launch(ctx context.Context, name string, display Display, disp
 		_ = logFile.Close()
 		return err
 	}
-	done := make(chan error, 1)
-	go func() {
-		done <- command.Wait()
+	if err := command.Process.Release(); err != nil {
 		_ = logFile.Close()
-	}()
+		return err
+	}
+	if err := logFile.Close(); err != nil {
+		return err
+	}
 
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -122,11 +124,6 @@ func (m *Manager) Launch(ctx context.Context, name string, display Display, disp
 			return ctx.Err()
 		case <-ticker.C:
 		case <-timer.C:
-			if running(pid) {
-				return nil
-			}
-			return launchError(logPath)
-		case <-done:
 			if running(pid) {
 				return nil
 			}

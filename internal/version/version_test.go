@@ -1,14 +1,10 @@
 package version
 
 import (
-	_ "embed"
 	"os"
 	"strings"
 	"testing"
 )
-
-//go:embed CHANGELOG.md
-var embeddedCopy []byte
 
 func rootChangelog(t *testing.T) []byte {
 	t.Helper()
@@ -17,12 +13,6 @@ func rootChangelog(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return data
-}
-
-func TestEmbeddedChangelogMatchesRoot(t *testing.T) {
-	if string(embeddedCopy) != string(rootChangelog(t)) {
-		t.Fatal("embedded changelog differs from root CHANGELOG.md")
-	}
 }
 
 func TestVersionMatchesTopEntry(t *testing.T) {

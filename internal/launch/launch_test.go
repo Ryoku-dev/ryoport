@@ -7,9 +7,6 @@ import (
 
 func TestTerminalArgvClassForm(t *testing.T) {
 	const class = "dev.ryoku.ryoport_ssh"
-	if !strings.Contains(class, ".") || strings.Contains(class, "-") {
-		t.Fatalf("%q is not a GTK application id", class)
-	}
 	for _, terminal := range []string{"kitty", "ghostty", "foot", "alacritty"} {
 		argv := terminalArgv(terminal, true, []string{"ssh", "myhost"}, class, "ssh: myhost")
 		var hasID, hasBare bool

@@ -68,6 +68,85 @@ secureboot="on"
 	}
 }
 
+func TestListKeepsGoodAndBrokenEntriesIndependent(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "good.conf"), `guest_os="linux"
+disk_img="good/disk.qcow2"
+cpu_cores="6"
+`)
+	if err := os.Mkdir(filepath.Join(root, "broken.conf"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	machines, err := (&Manager{Root: root}).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var good, broken *Machine
+	for i := range machines {
+		switch machines[i].Name {
+		case "good":
+			good = &machines[i]
+		case "broken":
+			broken = &machines[i]
+		}
+	}
+	if good == nil || good.Cores != "6" {
+		t.Fatalf("good machine missing from List(): %+v", machines)
+	}
+	if broken == nil || broken.Guest != "linux" || broken.Cores != "auto" {
+		t.Fatalf("broken machine did not get safe defaults: %+v", machines)
+	}
+}
+
+func TestListShowsEscapingDiskButDeleteRefuses(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "escape.conf"), `disk_img="../outside.qcow2"
+cpu_cores="2"
+`)
+	manager := &Manager{Root: root}
+	machines, err := manager.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(machines) != 1 || machines[0].Name != "escape" || machines[0].Cores != "2" {
+		t.Fatalf("List() = %+v", machines)
+	}
+	if err := manager.Delete(context.Background(), "escape", false); err == nil || !strings.Contains(err.Error(), "disk_img escapes the VM root") {
+		t.Fatalf("Delete() error = %v", err)
+	}
+}
+
+func TestLegacyMachineNameWorksOnManagePaths(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PATH", t.TempDir())
+	name := "vm1+test"
+	confPath := filepath.Join(root, name+".conf")
+	writeFile(t, confPath, `disk_img="vm1+test/disk.qcow2"
+`)
+	manager := &Manager{Root: root}
+
+	if ValidName(name) {
+		t.Fatalf("ValidName(%q) = true; legacy names must remain creation-invalid", name)
+	}
+	if err := manager.SetConfig(name, "ram", "4G"); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := manager.Get(context.Background(), name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Name != name || detail.RAM != "4G" {
+		t.Fatalf("Get() = %+v", detail)
+	}
+	if err := manager.Delete(context.Background(), name, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(confPath); !os.IsNotExist(err) {
+		t.Fatalf("config remains after Delete(): %v", err)
+	}
+}
+
 func TestConfigUSBAndPortForwardRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	manager := &Manager{Root: root}

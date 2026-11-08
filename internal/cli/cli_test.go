@@ -188,6 +188,25 @@ func TestRYOSSHOutputShapes(t *testing.T) {
 	}
 }
 
+func TestRYOSSHProbeFailurePrintsJSONAndExitsOne(t *testing.T) {
+	_, bin := cliEnvironment(t)
+	ssh := "#!/bin/sh\nprintf 'ssh: connect to host offline port 22: Connection refused\\n' >&2\nexit 255\n"
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(ssh), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	code, gui, stdout, stderr := runCLI(t, "ryossh", "probe", "offline")
+	if code != 1 || gui || stderr != "" {
+		t.Fatalf("probe = code %d gui %v stderr %q, want code 1 and JSON only", code, gui, stderr)
+	}
+	var probe map[string]any
+	if err := json.Unmarshal([]byte(stdout), &probe); err != nil {
+		t.Fatalf("invalid probe JSON %q: %v", stdout, err)
+	}
+	if ok, exists := probe["ok"]; !exists || ok != false {
+		t.Fatalf("probe JSON = %#v, want ok false", probe)
+	}
+}
+
 func TestRYOSSHAskpass(t *testing.T) {
 	cliEnvironment(t)
 	t.Setenv("RYOPORT_ALIAS", "ally")

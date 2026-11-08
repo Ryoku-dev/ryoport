@@ -51,7 +51,14 @@ func mainRYOSSH(args []string, stdout, stderr io.Writer) int {
 		if !sshNeed(rest, 1, "usage: ryossh probe <alias>", stderr) {
 			return 1
 		}
-		return encodeResult(stdout, stderr, remoteProbeValue(manager.Probe(ctx, rest[0])), nil, "ryossh")
+		probe := manager.Probe(ctx, rest[0])
+		if code := encodeResult(stdout, stderr, remoteProbeValue(probe), nil, "ryossh"); code != 0 {
+			return code
+		}
+		if !probe.OK {
+			return 1
+		}
+		return 0
 	case "probeall":
 		probes := manager.ProbeAll(ctx)
 		values := make([]any, 0, len(probes))
