@@ -8,13 +8,16 @@ import (
 	"gioui.org/unit"
 )
 
+// columnCount is how many columns of at least minWidth fit. It does not shrink
+// to n, so a single search result keeps a tile's width instead of spanning
+// the whole pane.
 func columnCount(available, minWidth, gap, n int) int {
 	if n <= 0 {
 		return 0
 	}
 	minWidth = max(1, minWidth)
 	gap = max(0, gap)
-	return min(n, max(1, (available+gap)/(minWidth+gap)))
+	return max(1, (available+gap)/(minWidth+gap))
 }
 
 func Columns(gtx layout.Context, minCol, gap unit.Dp, n int, cell func(gtx layout.Context, i int) layout.Dimensions) layout.Dimensions {

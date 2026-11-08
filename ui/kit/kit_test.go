@@ -78,6 +78,9 @@ func TestColumnCount(t *testing.T) {
 			t.Errorf("columnCount(%d) = %d, want %d", test.width, got, test.want)
 		}
 	}
+	if got := columnCount(1000, 96, 8, 1); got != 9 {
+		t.Errorf("columnCount for one tile = %d, want 9: a lone tile keeps its column width", got)
+	}
 }
 
 func TestStepperClamp(t *testing.T) {

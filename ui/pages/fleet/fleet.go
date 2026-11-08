@@ -322,7 +322,7 @@ func (v *View) layoutFleet(gtx layout.Context, e *env.Env) layout.Dimensions {
 
 	selected := -1
 	for i, entry := range v.entries {
-		if entry.kind == entryResource && entry.resource.ID == e.Nav.Selected {
+		if entry.kind == entryResource && e.Nav.Shows(entry.resource.ID) {
 			selected = i
 			break
 		}
@@ -340,7 +340,7 @@ func (v *View) layoutEntry(gtx layout.Context, e *env.Env, entry listEntry) layo
 
 	resource := entry.resource
 	state := v.rowStates[resource.ID]
-	selected := resource.ID == e.Nav.Selected
+	selected := e.Nav.Shows(resource.ID)
 	focused := resource.ID == v.cursor
 	ink := e.Th.R.Fg2
 	if selected {

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"gioui.org/layout"
+	"gioui.org/op"
 	"gioui.org/widget"
 
 	"github.com/ryoku-dev/ryoport/internal/build"
@@ -96,10 +97,11 @@ func (c *Catalog) followPending(e *env.Env) {
 
 func (c *Catalog) body(e *env.Env) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
+		selected, query := c.selected, c.search.Text()
 		search := func(gtx layout.Context) layout.Dimensions {
 			return c.search.Layout(gtx, e.Th, "Search systems", "")
 		}
-		filtered := filterCatalog(e.Snap.Catalog.OS, c.search.Text())
+		filtered := filterCatalog(e.Snap.Catalog.OS, query)
 		grid := func(gtx layout.Context) layout.Dimensions {
 			if len(filtered) == 0 {
 				return kit.Empty(e.Th, icons.DesktopWindows, "No systems found", "Try a name or catalogue slug.")(gtx)
@@ -115,7 +117,13 @@ func (c *Catalog) body(e *env.Env) layout.Widget {
 		if system, ok := c.selectedSystem(e.Snap.Catalog.OS); ok {
 			children = append(children, layout.Rigid(c.details(e, system)))
 		}
-		return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S4)}.Layout(gtx, children...)
+		dims := layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S4)}.Layout(gtx, children...)
+		// The grid and the details were built from the state before this
+		// frame's typing and clicks, so draw once more when either changed.
+		if c.selected != selected || c.search.Text() != query {
+			gtx.Execute(op.InvalidateCmd{})
+		}
+		return dims
 	}
 }
 

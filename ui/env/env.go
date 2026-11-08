@@ -124,6 +124,12 @@ func (n *Nav) Clear() {
 	n.Draft = Draft{}
 }
 
+// Shows reports whether the work pane is showing resource id, so the list
+// marks a row as where you are only while its detail is actually open.
+func (n *Nav) Shows(id model.ID) bool {
+	return id != "" && id == n.Selected && n.Page == store.PageFleet && n.Draft == (Draft{})
+}
+
 func (n *Nav) Open(d Draft) {
 	n.Page = store.PageFleet
 	n.Draft = d

@@ -26,12 +26,13 @@ func (o *overviewTab) Layout(gtx layout.Context, e *env.Env, id model.ID, server
 		return o.layoutKnown(gtx, e, server)
 	}
 	probe := server.Probe
-	return kit.Columns(gtx, unit.Dp(280), e.Th.Sp.S5, 2, func(gtx layout.Context, column int) layout.Dimensions {
-		if column == 0 {
-			return o.layoutMeasures(gtx, e, id, probe)
-		}
-		return o.layoutServices(gtx, e, id, probe)
-	})
+	measures := func(gtx layout.Context) layout.Dimensions { return o.layoutMeasures(gtx, e, id, probe) }
+	services := func(gtx layout.Context) layout.Dimensions { return o.layoutServices(gtx, e, id, probe) }
+	gap := gtx.Dp(e.Th.Sp.S5)
+	if gtx.Constraints.Max.X < 2*gtx.Dp(unit.Dp(280))+gap {
+		return layout.Flex{Axis: layout.Vertical, Gap: gap}.Layout(gtx, layout.Rigid(measures), layout.Rigid(services))
+	}
+	return layout.Flex{Gap: gap}.Layout(gtx, layout.Flexed(1, measures), layout.Flexed(1, services))
 }
 
 func (o *overviewTab) layoutKnown(gtx layout.Context, e *env.Env, server *store.Server) layout.Dimensions {
