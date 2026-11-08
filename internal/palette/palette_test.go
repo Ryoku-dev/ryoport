@@ -18,6 +18,9 @@ func paletteEnvironment(t *testing.T) (config, cache string) {
 	t.Setenv("HOME", root)
 	t.Setenv("XDG_CONFIG_HOME", config)
 	t.Setenv("XDG_CACHE_HOME", cache)
+	previousOSRelease := osReleasePath
+	osReleasePath = filepath.Join(root, "missing-os-release")
+	t.Cleanup(func() { osReleasePath = previousOSRelease })
 	return config, cache
 }
 
@@ -66,10 +69,12 @@ func TestLoadResolutionOrder(t *testing.T) {
 		t.Fatalf("locked = %#v", locked)
 	}
 
-	if got := Load(Dark); got.Source != "signature" || !got.Dark || len(got.Roles) != 0 {
+	if got := Load(Dark); got.Source != "wallpaper" || !got.Dark || !got.Forced ||
+		got.Roles["primary"] != wall.Roles["primary"] {
 		t.Fatalf("dark mode = %#v", got)
 	}
-	if got := Load(Light); got.Source != "signature" || got.Dark || len(got.Roles) != 0 {
+	if got := Load(Light); got.Source != "wallpaper" || got.Dark || !got.Forced ||
+		got.Roles["primary"] != wall.Roles["primary"] {
 		t.Fatalf("light mode = %#v", got)
 	}
 }
@@ -94,6 +99,67 @@ func TestLoadDetectsLightSurface(t *testing.T) {
 	writeJSON(t, filepath.Join(cache, "ryoku", "colors.json"), `{"surface":"#7f7f7f"}`)
 	if got := Load(Follow); !got.Dark {
 		t.Fatalf("#7f7f7f classified light: %#v", got)
+	}
+}
+
+func TestLoadForcedModeKeepsRyokuAccents(t *testing.T) {
+	_, cache := paletteEnvironment(t)
+	writeJSON(t, filepath.Join(cache, "ryoku", "colors.json"), `{
+		"surface":"#f5f5f5",
+		"primary":"#6750a4",
+		"onPrimary":"#ffffff",
+		"secondaryContainer":"#e8def8",
+		"onSecondaryContainer":"#1d192b",
+		"error":"#ba1a1a"
+	}`)
+	for _, test := range []struct {
+		mode Mode
+		dark bool
+	}{
+		{Dark, true},
+		{Light, false},
+	} {
+		got := Load(test.mode)
+		if got.Source != "wallpaper" || got.Dark != test.dark || !got.Forced {
+			t.Fatalf("forced mode %v = %#v", test.mode, got)
+		}
+		for _, role := range []string{"primary", "onPrimary", "secondaryContainer", "onSecondaryContainer", "error"} {
+			if _, ok := got.Roles[role]; !ok {
+				t.Errorf("forced mode %v dropped %s", test.mode, role)
+			}
+		}
+	}
+}
+
+func TestEditionColorFromOSRelease(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want color.NRGBA
+	}{
+		{"id", "NAME=Arch Linux\nID=arch\nID_LIKE=debian\n", color.NRGBA{R: 0x17, G: 0x93, B: 0xd1, A: 0xff}},
+		{"id like", "ID=custom\nID_LIKE=\"debian ubuntu\"\n", color.NRGBA{R: 0xd7, G: 0x0a, B: 0x53, A: 0xff}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "os-release")
+			writeJSON(t, path, test.body)
+			got, ok := editionColor(path)
+			if !ok || got != test.want {
+				t.Fatalf("edition = %#v, %v; want %#v", got, ok, test.want)
+			}
+		})
+	}
+}
+
+func TestLoadUsesEditionAccentWithoutRyokuPalette(t *testing.T) {
+	paletteEnvironment(t)
+	osReleasePath = filepath.Join(t.TempDir(), "os-release")
+	writeJSON(t, osReleasePath, "ID=fedora\n")
+	got := Load(Follow)
+	want := color.NRGBA{R: 0x51, G: 0xa2, B: 0xda, A: 0xff}
+	if got.Source != "signature" || got.Roles["primary"] != want {
+		t.Fatalf("edition palette = %#v, want primary %#v", got, want)
 	}
 }
 

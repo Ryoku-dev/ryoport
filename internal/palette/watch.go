@@ -92,7 +92,7 @@ func Watch(ctx context.Context, mode func() Mode, onChange func(Palette)) error 
 }
 
 func equal(a, b Palette) bool {
-	return a.Dark == b.Dark && a.Source == b.Source && maps.Equal(a.Roles, b.Roles)
+	return a.Dark == b.Dark && a.Forced == b.Forced && a.Source == b.Source && maps.Equal(a.Roles, b.Roles)
 }
 
 func armWatches(fd int, watches map[int]string, targets []string) error {

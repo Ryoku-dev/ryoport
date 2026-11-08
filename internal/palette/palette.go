@@ -13,6 +13,7 @@ import (
 type Palette struct {
 	Roles  map[string]color.NRGBA
 	Dark   bool
+	Forced bool
 	Source string
 }
 
@@ -25,10 +26,6 @@ const (
 )
 
 func Load(mode Mode) Palette {
-	if mode != Follow {
-		return Palette{Roles: map[string]color.NRGBA{}, Dark: mode != Light, Source: "signature"}
-	}
-
 	named := nestedRoles(readObject(xdg.RyokuShellSettings()), "themePalette")
 	follow := true
 	if theme := readObject(xdg.RyokuTheme()); theme != nil {
@@ -39,7 +36,7 @@ func Load(mode Mode) Palette {
 
 	roles := make(map[string]color.NRGBA)
 	source := "signature"
-	if follow {
+	if follow || mode != Follow {
 		wall := colorRoles(readObject(xdg.RyokuPalette()))
 		for key, value := range wall {
 			roles[key] = value
@@ -54,13 +51,22 @@ func Load(mode Mode) Palette {
 	if len(named) != 0 {
 		source = "scheme"
 	}
-
-	dark := true
-	if surface, ok := roles["surface"]; ok {
-		luminance := (0.299*float64(surface.R) + 0.587*float64(surface.G) + 0.114*float64(surface.B)) / 255
-		dark = luminance <= 0.5
+	if source == "signature" {
+		if accent, ok := editionColor(osReleasePath); ok {
+			roles["primary"] = accent
+		}
 	}
-	return Palette{Roles: roles, Dark: dark, Source: source}
+
+	forced := mode != Follow
+	dark := mode != Light
+	if !forced {
+		dark = true
+		if surface, ok := roles["surface"]; ok {
+			luminance := (0.299*float64(surface.R) + 0.587*float64(surface.G) + 0.114*float64(surface.B)) / 255
+			dark = luminance <= 0.5
+		}
+	}
+	return Palette{Roles: roles, Dark: dark, Forced: forced, Source: source}
 }
 
 func readObject(path string) map[string]any {
