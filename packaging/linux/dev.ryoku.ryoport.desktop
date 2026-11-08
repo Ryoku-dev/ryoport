@@ -7,5 +7,5 @@ Exec=ryoport
 Terminal=false
 Icon=dev.ryoku.ryoport
 StartupWMClass=dev.ryoku.ryoport
-Categories=System;Utility;Network;
+Categories=System;Emulator;
 Keywords=vm;virtual machine;qemu;quickemu;vps;ssh;remote;server;terminal;putty;hub;

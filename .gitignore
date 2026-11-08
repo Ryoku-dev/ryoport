@@ -1,4 +1,5 @@
 /ryoport
+/build/
 /dist/
 *.test
 /cover.out
