@@ -223,11 +223,145 @@ type meta struct {
 }
 
 type Manager struct {
-	tunnelsMu   sync.Mutex
-	tunnelAlive func(int) bool
+	tunnelsMu     sync.Mutex
+	tunnelAlive   func(int) bool
+	connectionsMu sync.Mutex
+	connections   map[string]*sync.Mutex
+	passwordSaved func(string) bool
 }
 
-func New() *Manager { return &Manager{tunnelAlive: alive} }
+func New() *Manager {
+	hasPassword := func(string) bool { return false }
+	if keyring.Available() {
+		hasPassword = func(alias string) bool {
+			password, err := keyring.Lookup(map[string]string{secretKey: alias})
+			return err == nil && password != ""
+		}
+	}
+	return &Manager{
+		tunnelAlive:   alive,
+		connections:   make(map[string]*sync.Mutex),
+		passwordSaved: hasPassword,
+	}
+}
+
+type sshEndpoint struct {
+	User string
+	Host string
+	Port int
+}
+
+func (endpoint sshEndpoint) key() string {
+	if endpoint.User == "" || endpoint.Host == "" || endpoint.Port < 1 {
+		return ""
+	}
+	return endpoint.User + "@" + strings.ToLower(endpoint.Host) + ":" + strconv.Itoa(endpoint.Port)
+}
+
+type connectionPlan struct {
+	alias         string
+	endpoint      sshEndpoint
+	passwordAlias string
+	controlKey    string
+}
+
+func buildConnectionPlans(aliases []string, endpoints map[string]sshEndpoint, saved map[string]bool) []connectionPlan {
+	donors := make(map[string][]string)
+	for _, alias := range aliases {
+		if key := endpoints[alias].key(); key != "" && saved[alias] {
+			donors[key] = append(donors[key], alias)
+		}
+	}
+	for key := range donors {
+		sort.Strings(donors[key])
+	}
+	plans := make([]connectionPlan, 0, len(aliases))
+	for _, alias := range aliases {
+		endpoint := endpoints[alias]
+		key := endpoint.key()
+		passwordAlias := ""
+		switch {
+		case saved[alias]:
+			passwordAlias = alias
+		case key != "" && len(donors[key]) > 0:
+			passwordAlias = donors[key][0]
+		}
+		controlKey := key
+		if controlKey == "" {
+			controlKey = "alias:" + alias
+		}
+		plans = append(plans, connectionPlan{
+			alias: alias, endpoint: endpoint, passwordAlias: passwordAlias, controlKey: controlKey,
+		})
+	}
+	return plans
+}
+
+func connectionGroups(plans []connectionPlan) [][]int {
+	var groups [][]int
+	index := make(map[string]int)
+	for i, plan := range plans {
+		group, ok := index[plan.controlKey]
+		if !ok {
+			group = len(groups)
+			index[plan.controlKey] = group
+			groups = append(groups, nil)
+		}
+		groups[group] = append(groups[group], i)
+	}
+	return groups
+}
+
+func (m *Manager) makeConnectionPlans(ctx context.Context, aliases []string) []connectionPlan {
+	endpoints := make(map[string]sshEndpoint, len(aliases))
+	saved := make(map[string]bool, len(aliases))
+	hasPassword := m.passwordSaved
+	if hasPassword == nil {
+		hasPassword = func(string) bool { return false }
+	}
+	side := readSidecar()
+	for _, alias := range aliases {
+		config := resolveConfig(ctx, alias)
+		host, port := resolveHostPort(config)
+		endpoints[alias] = sshEndpoint{User: config["user"], Host: host, Port: port}
+		saved[alias] = side[alias].Auth == "password" && hasPassword(alias)
+	}
+	return buildConnectionPlans(aliases, endpoints, saved)
+}
+
+func (m *Manager) connectionPlan(ctx context.Context, alias string) connectionPlan {
+	aliases := listAliases()
+	found := false
+	for _, candidate := range aliases {
+		if candidate == alias {
+			found = true
+			break
+		}
+	}
+	if !found {
+		aliases = append(aliases, alias)
+	}
+	for _, plan := range m.makeConnectionPlans(ctx, aliases) {
+		if plan.alias == alias {
+			return plan
+		}
+	}
+	return connectionPlan{alias: alias, controlKey: "alias:" + alias}
+}
+
+func (m *Manager) connectionLock(key string) *sync.Mutex {
+	m.connectionsMu.Lock()
+	defer m.connectionsMu.Unlock()
+	if m.connections == nil {
+		m.connections = make(map[string]*sync.Mutex)
+	}
+	lock := m.connections[key]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		m.connections[key] = lock
+	}
+	return lock
+}
 
 func (m *Manager) List(ctx context.Context) ([]Host, error) {
 	aliases := listAliases()
@@ -296,21 +430,32 @@ func (m *Manager) Probe(ctx context.Context, alias string) Probe {
 	if !ValidAlias(alias) {
 		return Probe{Alias: alias, Error: "bad alias"}
 	}
+	plan := m.connectionPlan(ctx, alias)
+	lock := m.connectionLock(plan.controlKey)
+	lock.Lock()
+	defer lock.Unlock()
 	entry := readSidecar()[alias]
 	probeCtx, cancel := withDefaultTimeout(ctx, 15*time.Second)
 	defer cancel()
-	return probeOne(probeCtx, alias, entry.Watch, entry.Auth == "password")
+	return probeOne(probeCtx, alias, entry.Watch, plan.passwordAlias)
 }
 
 func (m *Manager) ProbeAll(ctx context.Context) []Probe {
 	aliases := listAliases()
 	side := readSidecar()
+	plans := m.makeConnectionPlans(ctx, aliases)
+	groups := connectionGroups(plans)
 	results := make([]Probe, len(aliases))
-	parallel(ctx, len(aliases), func(i int) {
-		entry := side[aliases[i]]
-		probeCtx, cancel := withDefaultTimeout(ctx, 8*time.Second)
-		defer cancel()
-		results[i] = probeOne(probeCtx, aliases[i], entry.Watch, entry.Auth == "password")
+	parallel(ctx, len(groups), func(group int) {
+		for _, i := range groups[group] {
+			plan := plans[i]
+			lock := m.connectionLock(plan.controlKey)
+			lock.Lock()
+			probeCtx, cancel := withDefaultTimeout(ctx, 8*time.Second)
+			results[i] = probeOne(probeCtx, plan.alias, side[plan.alias].Watch, plan.passwordAlias)
+			cancel()
+			lock.Unlock()
+		}
 	})
 	return results
 }
@@ -393,12 +538,55 @@ func (m *Manager) Connect(alias string) error {
 	if err != nil {
 		return err
 	}
-	command := m.connectCommand(alias, term)
-	command, err = m.withPasswordEnv(alias, command)
+	plan := m.connectionPlan(context.Background(), alias)
+	command := m.connectCommand(alias, term, plan.passwordAlias != "")
+	command, err = withPasswordAlias(plan.passwordAlias, command)
 	if err != nil {
 		return err
 	}
 	return launch.TerminalResolved(term, known, command, sshClass, "ssh: "+alias)
+}
+
+// OpenFiles establishes the shared SSH control connection before handing the
+// alias to the desktop's SFTP browser.
+func (m *Manager) OpenFiles(ctx context.Context, alias string) error {
+	if !ValidAlias(alias) {
+		return errors.New("bad alias")
+	}
+	plan := m.connectionPlan(ctx, alias)
+	lock := m.connectionLock(plan.controlKey)
+	lock.Lock()
+	probeCtx, cancel := withDefaultTimeout(ctx, 15*time.Second)
+	err := establishControl(probeCtx, plan)
+	cancel()
+	lock.Unlock()
+	if err != nil {
+		return err
+	}
+	return launch.OpenSFTP("", alias, 22)
+}
+
+func establishControl(ctx context.Context, plan connectionPlan) error {
+	opts := nonInteractiveOpts()
+	env := os.Environ()
+	usePassword := plan.passwordAlias != ""
+	if usePassword {
+		opts = passwordOpts()
+		askpass, err := ensureAskpass()
+		if err != nil {
+			return err
+		}
+		env = append(env, "SSH_ASKPASS="+askpass, "SSH_ASKPASS_REQUIRE=force", "RYOPORT_ALIAS="+plan.passwordAlias)
+	}
+	args := append(opts, plan.alias, "true")
+	command := exec.CommandContext(ctx, "ssh", args...)
+	command.Env = env
+	output, err := command.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	message, _ := probeError(ctx, err, string(output), usePassword)
+	return errors.New(message)
 }
 
 func (m *Manager) ConnectCommand(alias string) []string {
@@ -409,12 +597,13 @@ func (m *Manager) ConnectCommand(alias string) []string {
 	if err != nil {
 		return nil
 	}
-	return m.connectCommand(alias, term)
+	plan := m.connectionPlan(context.Background(), alias)
+	return m.connectCommand(alias, term, plan.passwordAlias != "")
 }
 
-func (m *Manager) connectCommand(alias, term string) []string {
+func (m *Manager) connectCommand(alias, term string, usePassword bool) []string {
 	opts := []string{"-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", alias}
-	if filepath.Base(term) == "kitty" && readSidecar()[alias].Auth != "password" {
+	if filepath.Base(term) == "kitty" && !usePassword {
 		return append([]string{"kitten", "ssh"}, opts...)
 	}
 	return append([]string{"ssh"}, opts...)
@@ -846,14 +1035,19 @@ func ParseTunnelSpec(spec string) (kind, arg string, err error) {
 }
 
 func (m *Manager) withPasswordEnv(alias string, argv []string) ([]string, error) {
-	if readSidecar()[alias].Auth != "password" {
+	plan := m.connectionPlan(context.Background(), alias)
+	return withPasswordAlias(plan.passwordAlias, argv)
+}
+
+func withPasswordAlias(passwordAlias string, argv []string) ([]string, error) {
+	if passwordAlias == "" {
 		return argv, nil
 	}
 	askpass, err := ensureAskpass()
 	if err != nil {
 		return nil, err
 	}
-	return append([]string{"env", "SSH_ASKPASS=" + askpass, "SSH_ASKPASS_REQUIRE=force", "RYOPORT_ALIAS=" + alias}, argv...), nil
+	return append([]string{"env", "SSH_ASKPASS=" + askpass, "SSH_ASKPASS_REQUIRE=force", "RYOPORT_ALIAS=" + passwordAlias}, argv...), nil
 }
 
 func resolveConfig(ctx context.Context, alias string) map[string]string {
@@ -989,17 +1183,18 @@ command -v systemctl >/dev/null 2>&1 && echo "failed_units=$(systemctl --failed 
 echo "logins=$(who 2>/dev/null | wc -l)"
 ps -eo pcpu,comm --sort=-pcpu 2>/dev/null | awk "NR>1&&NR<=4{printf \"top%d=%s:%s\n\",NR-1,\$2,\$1}"`
 
-func probeOne(ctx context.Context, alias string, watch []string, usePassword bool) Probe {
+func probeOne(ctx context.Context, alias string, watch []string, passwordAlias string) Probe {
 	_ = xdg.EnsureDir(xdg.SSHDir())
 	opts := nonInteractiveOpts()
 	env := os.Environ()
+	usePassword := passwordAlias != ""
 	if usePassword {
 		opts = passwordOpts()
 		askpass, err := ensureAskpass()
 		if err != nil {
 			return Probe{Alias: alias, Error: err.Error()}
 		}
-		env = append(env, "SSH_ASKPASS="+askpass, "SSH_ASKPASS_REQUIRE=force", "RYOPORT_ALIAS="+alias)
+		env = append(env, "SSH_ASKPASS="+askpass, "SSH_ASKPASS_REQUIRE=force", "RYOPORT_ALIAS="+passwordAlias)
 	}
 	args := append(opts, alias, "sh", "-s")
 	cmd := exec.CommandContext(ctx, "ssh", args...)
@@ -1264,6 +1459,11 @@ func stanzaLines(host HostInput) []string {
 		port = 22
 	}
 	lines = append(lines, "    Port "+strconv.Itoa(port))
+	lines = append(lines,
+		"    ControlMaster auto",
+		"    ControlPath "+xdg.SSHControlPath(),
+		"    ControlPersist 60",
+	)
 	if host.IdentityFile != "" {
 		lines = append(lines, "    IdentityFile "+host.IdentityFile)
 	}

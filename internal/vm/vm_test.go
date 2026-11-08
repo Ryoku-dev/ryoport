@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -65,6 +66,55 @@ secureboot="on"
 	}
 	if !reflect.DeepEqual(detail.Snapshots, wantSnapshots) || !detail.Sealed {
 		t.Fatalf("snapshots = %+v, sealed = %v", detail.Snapshots, detail.Sealed)
+	}
+}
+
+func TestListDetectsMachineMarks(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "cloud.conf"), `disk_img="cloud/disk.qcow2"
+ryovm_tools="docker,git"
+`)
+	writeFile(t, filepath.Join(root, "burn.conf"), `disk_img="burn/disk.qcow2"
+ryovm_burn="1"
+`)
+	writeFile(t, filepath.Join(root, "session.conf"), `disk_img="session/disk.qcow2"
+`)
+	sessionDir := filepath.Join(root, "session")
+	if err := os.Mkdir(sessionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(sessionDir, "session.pid"), processID())
+	writeFile(t, filepath.Join(sessionDir, "session.disposable"), "")
+
+	machines, err := (&Manager{Root: root}).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := make(map[string]Machine, len(machines))
+	for _, machine := range machines {
+		byName[machine.Name] = machine
+	}
+	if !byName["cloud"].Instant || byName["cloud"].Burn || byName["cloud"].Disposable {
+		t.Fatalf("cloud marks = %+v", byName["cloud"])
+	}
+	if !byName["burn"].Burn || !byName["burn"].Disposable || byName["burn"].Running {
+		t.Fatalf("burn marks = %+v", byName["burn"])
+	}
+	if !byName["session"].Disposable || byName["session"].Burn || !byName["session"].Running {
+		t.Fatalf("session marks = %+v", byName["session"])
+	}
+	data, err := json.Marshal(byName["burn"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"instant", "burn", "disposable", "sealed"} {
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("machine JSON omitted stable key %q: %s", key, data)
+		}
 	}
 }
 

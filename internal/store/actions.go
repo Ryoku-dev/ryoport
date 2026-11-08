@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -402,14 +401,8 @@ func (s *Store) Connect(alias string) {
 
 func (s *Store) OpenFiles(alias string) {
 	id := model.NewID(model.KindServer, alias)
-	s.runAction(id, "Opened files on "+alias, "open files on "+alias, func(context.Context) error {
-		s.mu.Lock()
-		server := s.servers[alias]
-		s.mu.Unlock()
-		if server == nil {
-			return fmt.Errorf("server %q was not found", alias)
-		}
-		return launch.OpenSFTP(server.User, server.HostName, server.Port)
+	s.runAction(id, "Opened files on "+alias, "open files on "+alias, func(ctx context.Context) error {
+		return s.o.Remote.OpenFiles(ctx, alias)
 	}, nil)
 }
 

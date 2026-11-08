@@ -126,6 +126,34 @@ func TestProbeErrorNeedAuth(t *testing.T) {
 	}
 }
 
+func TestSharedAliasPasswordPlanningAndProbeGroups(t *testing.T) {
+	aliases := []string{"ally", "prowl", "other"}
+	endpoints := map[string]sshEndpoint{
+		"ally":  {User: "neur0map", Host: "192.168.110.8", Port: 22},
+		"prowl": {User: "neur0map", Host: "192.168.110.8", Port: 22},
+		"other": {User: "nero", Host: "192.168.110.9", Port: 22},
+	}
+	plans := buildConnectionPlans(aliases, endpoints, map[string]bool{"ally": true})
+	if plans[0].passwordAlias != "ally" || plans[1].passwordAlias != "ally" {
+		t.Fatalf("shared password plans = %#v", plans)
+	}
+	if plans[2].passwordAlias != "" {
+		t.Fatalf("unrelated alias borrowed password from %q", plans[2].passwordAlias)
+	}
+	groups := connectionGroups(plans)
+	if len(groups) != 2 || len(groups[0]) != 2 || groups[0][0] != 0 || groups[0][1] != 1 {
+		t.Fatalf("connection groups = %#v", groups)
+	}
+	setTestHome(t)
+	wrapped, err := withPasswordAlias(plans[1].passwordAlias, []string{"ssh", "prowl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wrapped) < 6 || wrapped[3] != "RYOPORT_ALIAS=ally" {
+		t.Fatalf("shared password environment = %#v", wrapped)
+	}
+}
+
 func TestParseTunnelSpec(t *testing.T) {
 	valid := map[string][2]string{
 		"L:15432:127.0.0.1:22":         {"local", "15432:127.0.0.1:22"},
@@ -291,7 +319,7 @@ func TestSaveRemoveManagedInclude(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantManaged := "# Managed by ryoport. Do not edit; use the ryoport app or `ryossh add`/`ryossh remove`.\n\nHost alpha\n    HostName alpha.home\n    User nero\n    Port 2222\n    IdentityFile ~/.ssh/id_alpha\n    ProxyJump jump\n\n"
+	wantManaged := "# Managed by ryoport. Do not edit; use the ryoport app or `ryossh add`/`ryossh remove`.\n\nHost alpha\n    HostName alpha.home\n    User nero\n    Port 2222\n    ControlMaster auto\n    ControlPath " + xdg.SSHControlPath() + "\n    ControlPersist 60\n    IdentityFile ~/.ssh/id_alpha\n    ProxyJump jump\n\n"
 	if string(managed) != wantManaged {
 		t.Fatalf("managed include:\n%s\nwant:\n%s", managed, wantManaged)
 	}

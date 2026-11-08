@@ -40,6 +40,8 @@ type Machine struct {
 	Installed  bool   `json:"installed"`
 	SSH        string `json:"ssh"`
 	Spice      string `json:"spice"`
+	Instant    bool   `json:"instant"`
+	Burn       bool   `json:"burn"`
 	Disposable bool   `json:"disposable"`
 	Sealed     bool   `json:"sealed"`
 	TPM        bool   `json:"tpm"`

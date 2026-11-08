@@ -212,6 +212,53 @@ func TestJobMappingFromBuildEvents(t *testing.T) {
 	if job.Detail != "From builds.kolibrios.org" {
 		t.Fatalf("a blank line cleared the detail: %q", job.Detail)
 	}
+	lines := []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
+	for _, line := range lines {
+		applyBuildEvent(&job, build.Event{Phase: build.PhaseLog, Line: "- " + line})
+	}
+	wantLog := lines[len(lines)-8:]
+	if len(job.Log) != len(wantLog) {
+		t.Fatalf("job log = %#v, want %#v", job.Log, wantLog)
+	}
+	for i := range wantLog {
+		if job.Log[i] != wantLog[i] {
+			t.Fatalf("job log = %#v, want %#v", job.Log, wantLog)
+		}
+	}
+	if job.Detail != "ten" {
+		t.Fatalf("latest detail = %q, want ten", job.Detail)
+	}
+}
+
+func TestJobLogIsSharedUntilItChanges(t *testing.T) {
+	s := New(Options{Now: func() time.Time { return time.Unix(1, 0) }})
+	s.mu.Lock()
+	s.jobs["job-1"] = &runningJob{job: model.Job{ID: "job-1", Log: []string{"one"}, State: model.JobRunning}}
+	s.publishLocked()
+	s.mu.Unlock()
+	before := s.Snapshot().Jobs[0].Log
+
+	s.mu.Lock()
+	s.pushNoticeLocked(model.EventInfo, "Unrelated", "", "")
+	s.publishLocked()
+	s.mu.Unlock()
+	shared := s.Snapshot().Jobs[0].Log
+	if &before[0] != &shared[0] {
+		t.Fatal("unchanged job log was cloned")
+	}
+
+	s.mu.Lock()
+	running := s.jobs["job-1"]
+	applyBuildEvent(&running.job, build.Event{Phase: build.PhaseLog, Line: "- two"})
+	s.publishLocked()
+	s.mu.Unlock()
+	after := s.Snapshot().Jobs[0].Log
+	if len(before) != 1 || before[0] != "one" {
+		t.Fatalf("published job log mutated: %#v", before)
+	}
+	if len(after) != 2 || after[0] != "one" || after[1] != "two" {
+		t.Fatalf("updated job log = %#v", after)
+	}
 }
 
 func TestUndoWindow(t *testing.T) {
@@ -353,13 +400,13 @@ func TestMachineResourcePinnedFromSettings(t *testing.T) {
 	snap := &Snapshot{
 		At:          time.Unix(1, 0),
 		Settings:    config.Settings{Pinned: []string{"machine:lab"}},
-		Machines:    map[string]*Machine{"lab": {Detail: vm.Detail{Machine: vm.Machine{Name: "lab", Installed: true}}}},
+		Machines:    map[string]*Machine{"lab": {Detail: vm.Detail{Machine: vm.Machine{Name: "lab", Installed: true, Instant: true, Disposable: true, Sealed: true}}}},
 		Passthrough: map[string]*Passthrough{},
 		Servers:     map[string]*Server{},
 		Consoles:    map[string]*Console{},
 	}
 	resources := deriveResources(snap, map[string]bool{})
-	if len(resources) != 1 || !resources[0].Pinned {
+	if len(resources) != 1 || !resources[0].Pinned || !resources[0].Instant || !resources[0].Disposable || !resources[0].Sealed {
 		t.Fatalf("resources = %#v", resources)
 	}
 }

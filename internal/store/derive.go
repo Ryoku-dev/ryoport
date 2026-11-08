@@ -24,6 +24,7 @@ func deriveResources(snap *Snapshot, starting map[string]bool) []model.Resource 
 			ID: id, Kind: model.KindMachine, Name: name, State: state,
 			Detail: machineDetail(machine.Machine), Icon: machine.OS,
 			Pinned: isPinned(snap.Settings.Pinned, id), Primary: machinePrimary(state), Updated: snap.At,
+			Instant: machine.Instant, Disposable: machine.Disposable, Sealed: machine.Sealed,
 		})
 	}
 	for _, job := range snap.Jobs {

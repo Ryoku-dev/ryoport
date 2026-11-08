@@ -78,6 +78,13 @@ func applyBuildEvent(job *model.Job, event build.Event) {
 	case build.PhaseLog:
 		if line := cleanLogLine(event.Line); line != "" {
 			job.Detail = line
+			log := job.Log
+			if len(log) >= 8 {
+				log = log[len(log)-7:]
+			}
+			next := make([]string, len(log), len(log)+1)
+			copy(next, log)
+			job.Log = append(next, line)
 		}
 	}
 	if event.Progress != nil {

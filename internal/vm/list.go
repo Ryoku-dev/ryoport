@@ -107,7 +107,7 @@ func (m *Manager) machine(name string, conf *qconf.Conf) (Machine, error) {
 	machine.Running = running(pid)
 	machine.DiskUsed = allocatedBytes(dir)
 	machine.Installed = pathExists(disk)
-	machine.Disposable = machine.Running && pathExists(filepath.Join(dir, name+".disposable"))
+	machine.Disposable = machine.Burn || (machine.Running && pathExists(filepath.Join(dir, name+".disposable")))
 	machine.Sealed = conf.Get("ryovm_sealed") == "1" && machine.Installed
 	if machine.Running {
 		machine.SSH = portOf(ports, "ssh")
@@ -142,6 +142,9 @@ func machineDefaults(name string, conf *qconf.Conf) Machine {
 	}
 	machine.OS = conf.Get("ryovm_os")
 	machine.Disk = conf.Get("disk_size")
+	machine.Instant = conf.Has("ryovm_ssh_user") || conf.Has("ryovm_tools")
+	machine.Burn = conf.Get("ryovm_burn") == "1"
+	machine.Disposable = machine.Burn
 	machine.TPM = conf.Get("tpm") == "on"
 	machine.SecureBoot = conf.Get("secureboot") == "on"
 	machine.UEFI = conf.Get("boot") != "legacy"
