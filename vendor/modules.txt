@@ -54,6 +54,8 @@ gioui.org/x/explorer
 gioui.org/x/notify
 gioui.org/x/notify/android
 gioui.org/x/notify/macos
+gioui.org/x/richtext
+gioui.org/x/styledtext
 # git.sr.ht/~jackmordaunt/go-toast v1.0.0
 ## explicit; go 1.20
 git.sr.ht/~jackmordaunt/go-toast
@@ -92,6 +94,9 @@ github.com/srwiley/oksvg
 # github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
 ## explicit; go 1.17
 github.com/srwiley/rasterx
+# golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
+## explicit; go 1.23.0
+golang.org/x/exp/constraints
 # golang.org/x/exp/shiny v0.0.0-20250408133849-7e4ce0ab07d0
 ## explicit; go 1.23.0
 golang.org/x/exp/shiny/iconvg
