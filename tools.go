@@ -5,7 +5,6 @@
 package tools
 
 import (
-	_ "gioui.org/x/component"
 	_ "gioui.org/x/explorer"
 	_ "gioui.org/x/notify"
 	_ "github.com/godbus/dbus/v5"
