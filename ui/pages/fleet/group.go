@@ -12,6 +12,7 @@ type groupKind uint8
 
 const (
 	groupNeeds groupKind = iota
+	groupPinned
 	groupRunning
 	groupBecoming
 	groupStopped
@@ -23,7 +24,7 @@ type resourceGroup struct {
 	Resources []model.Resource
 }
 
-var groupTitles = [...]string{"Needs you", "Running", "Becoming", "Stopped"}
+var groupTitles = [...]string{"Needs you", "Pinned", "Running", "Becoming", "Stopped"}
 
 func filterResources(resources []model.Resource, filter env.Filter, query string) []model.Resource {
 	needle := foldedRunes(strings.TrimSpace(query))
@@ -79,7 +80,7 @@ func containsFold(value string, needle []rune) bool {
 }
 
 func groupResources(resources []model.Resource) []resourceGroup {
-	var counts [4]int
+	var counts [len(groupTitles)]int
 	for _, resource := range resources {
 		counts[groupOf(resource)]++
 	}
@@ -95,21 +96,13 @@ func groupResources(resources []model.Resource) []resourceGroup {
 			Resources: make([]model.Resource, 0, count),
 		})
 	}
-	for pinned := true; ; pinned = false {
-		for _, resource := range resources {
-			if resource.Pinned != pinned {
-				continue
+	for _, resource := range resources {
+		kind := groupOf(resource)
+		for i := range groups {
+			if groups[i].Kind == kind {
+				groups[i].Resources = append(groups[i].Resources, resource)
+				break
 			}
-			kind := groupOf(resource)
-			for i := range groups {
-				if groups[i].Kind == kind {
-					groups[i].Resources = append(groups[i].Resources, resource)
-					break
-				}
-			}
-		}
-		if !pinned {
-			break
 		}
 	}
 	return groups
@@ -118,19 +111,25 @@ func groupResources(resources []model.Resource) []resourceGroup {
 func groupOf(resource model.Resource) groupKind {
 	// A server with a failed unit is still up and answering; it reads as
 	// running with an amber word rather than waiting on the person.
+	var kind groupKind
 	if resource.State == model.StateDegraded {
-		return groupRunning
+		kind = groupRunning
+	} else {
+		switch resource.State.Tone() {
+		case model.ToneAttention, model.ToneBad:
+			kind = groupNeeds
+		case model.ToneAlive:
+			kind = groupRunning
+		case model.ToneBusy:
+			kind = groupBecoming
+		default:
+			kind = groupStopped
+		}
 	}
-	switch resource.State.Tone() {
-	case model.ToneAttention, model.ToneBad:
-		return groupNeeds
-	case model.ToneAlive:
-		return groupRunning
-	case model.ToneBusy:
-		return groupBecoming
-	default:
-		return groupStopped
+	if resource.Pinned && kind != groupNeeds {
+		return groupPinned
 	}
+	return kind
 }
 
 func fleetCounts(resources []model.Resource) [4]int {

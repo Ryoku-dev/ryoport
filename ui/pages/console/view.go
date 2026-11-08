@@ -64,7 +64,7 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			Outline: -1,
 			Proof:   consoleProof(stored.Profile, stored.Reach),
 			Acts: func(gtx layout.Context) layout.Dimensions {
-				return v.actions(gtx, e, id, stored.Profile, stored.Reach)
+				return v.actions(gtx, e, resource, stored.Profile, stored.Reach)
 			},
 			Below: v.passwordForm(e, stored.Profile),
 		})
@@ -88,13 +88,13 @@ func (v *View) missing(gtx layout.Context, e *env.Env) layout.Dimensions {
 	return v.pane.Layout(gtx, e, header, nil, 0, body)
 }
 
-func (v *View) actions(gtx layout.Context, e *env.Env, id model.ID, profile console.Profile, reach *console.Reach) layout.Dimensions {
+func (v *View) actions(gtx layout.Context, e *env.Env, resource model.Resource, profile console.Profile, reach *console.Reach) layout.Dimensions {
 	blocker := consoleConnectBlocker(e.Snap.Host.Consoles, profile, reach)
 	if v.open.Clicked(gtx) && blocker == "" {
 		e.Ops.OpenConsole(profile.ID)
 	}
 	if v.edit.Clicked(gtx) {
-		e.Nav.Open(env.Draft{Kind: env.DraftConsole, Target: id})
+		e.Nav.Open(env.Draft{Kind: env.DraftConsole, Target: resource.ID})
 	}
 	if v.more.Clicked(gtx) {
 		v.overflow.Open = !v.overflow.Open
@@ -103,10 +103,12 @@ func (v *View) actions(gtx layout.Context, e *env.Env, id model.ID, profile cons
 		v.overflow.Open = false
 		switch choice {
 		case 0:
-			v.showPassword = true
+			e.Ops.SetPinned(resource.ID, !resource.Pinned)
 		case 1:
+			v.showPassword = true
+		case 2:
 			e.Ops.ClearConsolePassword(profile.ID)
-		case 3:
+		case 4:
 			name := profile.Name
 			if name == "" {
 				name = strings.ToUpper(profile.Kind) + " console"
@@ -120,7 +122,12 @@ func (v *View) actions(gtx layout.Context, e *env.Env, id model.ID, profile cons
 		}
 	}
 
+	pinLabel := "Pin"
+	if resource.Pinned {
+		pinLabel = "Unpin"
+	}
 	items := []kit.MenuItem{
+		{Icon: icons.PushPin, Label: pinLabel},
 		{Icon: icons.Key, Label: "Set password"},
 		{Icon: icons.LockOpen, Label: "Clear password", Disabled: profile.Auth == ""},
 		{Divider: true},

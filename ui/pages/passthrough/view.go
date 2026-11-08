@@ -99,13 +99,15 @@ func (v *View) actions(gtx layout.Context, e *env.Env, resource model.Resource, 
 		v.overflow.Open = false
 		switch choice {
 		case 0:
+			e.Ops.SetPinned(resource.ID, !resource.Pinned)
+		case 2:
 			e.Nav.Ask(env.Confirm{
 				Title:  "Remove " + machine.Name + "?",
 				Body:   "Removing forgets this passthrough machine but keeps its disk so it can be recovered.",
 				Action: "Remove and keep the disk",
 				Run:    func() { e.Ops.RemovePassthrough(machine.Name, false) },
 			})
-		case 1:
+		case 3:
 			e.Nav.Ask(env.Confirm{
 				Title:         "Delete " + machine.Name + " and its disk?",
 				Body:          fmt.Sprintf("Deleting removes the passthrough machine and its %d GB disk. It cannot be brought back.", machine.DiskGB),
@@ -121,7 +123,13 @@ func (v *View) actions(gtx layout.Context, e *env.Env, resource model.Resource, 
 		primaryLabel = "Open"
 		primaryIcon = icons.ScreenShare
 	}
+	pinLabel := "Pin"
+	if resource.Pinned {
+		pinLabel = "Unpin"
+	}
 	items := []kit.MenuItem{
+		{Icon: icons.PushPin, Label: pinLabel},
+		{Divider: true},
 		{Icon: icons.Delete, Label: "Remove, keep the disk", Danger: true},
 		{Icon: icons.Delete, Label: "Remove and delete the disk", Danger: true},
 	}

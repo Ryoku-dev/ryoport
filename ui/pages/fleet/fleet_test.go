@@ -76,7 +76,6 @@ func TestGroupResources(t *testing.T) {
 		{ID: "server:failed", State: model.StateError},
 		{ID: "machine:creating", State: model.StateCreating},
 		{ID: "machine:pinned-running", State: model.StateRunning, Pinned: true},
-		{ID: "server:pinned-auth", State: model.StateNeedsAuth, Pinned: true},
 	}
 	tests := []struct {
 		name      string
@@ -85,12 +84,13 @@ func TestGroupResources(t *testing.T) {
 		wantIDs   [][]model.ID
 	}{
 		{
-			name:      "fixed group order and pinned first",
+			name:      "fixed group order",
 			resources: resources,
-			wantKinds: []groupKind{groupNeeds, groupRunning, groupBecoming, groupStopped},
+			wantKinds: []groupKind{groupNeeds, groupPinned, groupRunning, groupBecoming, groupStopped},
 			wantIDs: [][]model.ID{
-				{"server:pinned-auth", "server:failed"},
-				{"machine:pinned-running", "machine:running"},
+				{"server:failed"},
+				{"machine:pinned-running"},
+				{"machine:running"},
 				{"machine:creating"},
 				{"machine:stopped"},
 			},
@@ -119,6 +119,25 @@ func TestGroupResources(t *testing.T) {
 				t.Fatalf("group resources = %v, want %v", gotIDs, test.wantIDs)
 			}
 		})
+	}
+}
+
+func TestPinnedNeedsYouStaysAheadOfPinnedStopped(t *testing.T) {
+	groups := groupResources([]model.Resource{
+		{ID: "server:auth", State: model.StateNeedsAuth, Pinned: true},
+		{ID: "console:stopped", State: model.StateStopped, Pinned: true},
+	})
+	gotKinds := make([]groupKind, len(groups))
+	gotIDs := make([][]model.ID, len(groups))
+	for i, group := range groups {
+		gotKinds[i] = group.Kind
+		gotIDs[i] = resourceIDs(group.Resources)
+	}
+	if want := []groupKind{groupNeeds, groupPinned}; !reflect.DeepEqual(gotKinds, want) {
+		t.Fatalf("group kinds = %v, want %v", gotKinds, want)
+	}
+	if want := [][]model.ID{{"server:auth"}, {"console:stopped"}}; !reflect.DeepEqual(gotIDs, want) {
+		t.Fatalf("group resources = %v, want %v", gotIDs, want)
 	}
 }
 
