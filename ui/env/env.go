@@ -99,8 +99,9 @@ type Nav struct {
 	Palette  bool
 	Confirm  *Confirm
 
-	tabs        map[model.Kind]string
-	focusSearch bool
+	tabs          map[model.Kind]string
+	focusSearch   bool
+	focusPassword bool
 }
 
 // Go changes page, closing the palette and any draft.
@@ -108,6 +109,27 @@ func (n *Nav) Go(p store.Page) {
 	n.Page = p
 	n.Palette = false
 	n.Draft = Draft{}
+}
+
+// Home returns to the view from above: the fleet page with nothing open.
+func (n *Nav) Home() {
+	n.Page = store.PageFleet
+	n.Selected = ""
+	n.Draft = Draft{}
+	n.Palette = false
+}
+
+// AskPassword selects a server and asks its view to focus the password field.
+func (n *Nav) AskPassword(id model.ID) {
+	n.Select(id)
+	n.focusPassword = true
+}
+
+// TakeFocusPassword reports and clears a pending password-field focus.
+func (n *Nav) TakeFocusPassword() bool {
+	f := n.focusPassword
+	n.focusPassword = false
+	return f
 }
 
 // Select shows a resource in the detail pane, closing any draft.

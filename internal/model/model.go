@@ -138,6 +138,12 @@ type Resource struct {
 	Pinned  bool
 	Primary Verb
 	Updated time.Time
+	// Machines only: made from a cloud image with Instant, deleted when it
+	// stops (Disposable), or rolled back to its sealed snapshot on each start
+	// (Sealed). Rows and headers show them as marks.
+	Instant    bool
+	Disposable bool
+	Sealed     bool
 }
 
 type Metric string
@@ -211,11 +217,12 @@ const (
 type Job struct {
 	ID         string
 	Target     ID
-	Title      string  // "Ubuntu 24.04"
-	Phase      string  // "Downloading", "Writing config"
-	Detail     string  // the tool's latest line, cleaned: "From builds.kolibrios.org"
-	Progress   float64 // 0..1, or -1 when unknown
-	Done       int64   // bytes, when the job moves bytes
+	Title      string   // "Ubuntu 24.04"
+	Phase      string   // "Downloading", "Writing config"
+	Detail     string   // the tool's latest line, cleaned: "From builds.kolibrios.org"
+	Log        []string // the last tool lines, cleaned, oldest first, at most 8
+	Progress   float64  // 0..1, or -1 when unknown
+	Done       int64    // bytes, when the job moves bytes
 	Total      int64
 	Rate       float64 // bytes per second
 	Started    time.Time
