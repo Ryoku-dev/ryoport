@@ -95,7 +95,7 @@ func (v *View) layoutUpdates(gtx layout.Context, e *env.Env) layout.Dimensions {
 			return layout.Inset{Top: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return settingRow(gtx, e.Th, "Check daily", "Checks release metadata in the background while Ryoport is open.", func(gtx layout.Context) layout.Dimensions {
 					before := v.daily.Value
-					dimensions := v.daily.Layout(gtx, e.Th, kit.ToggleBone, "Check daily")
+					dimensions := v.daily.Layout(gtx, e.Th, "Check daily")
 					if v.daily.Value != before {
 						value := v.daily.Value
 						e.Ops.UpdateSettings(func(settings *config.Settings) { settings.Updates.Check = value })

@@ -110,7 +110,7 @@ func (p *Instant) body(e *env.Env) layout.Widget {
 				if tool.Heavy {
 					label += " (large)"
 				}
-				return toggle.Layout(gtx, e.Th, kit.ToggleBone, label)
+				return toggle.Layout(gtx, e.Th, label)
 			})
 		}
 		packageField := func(gtx layout.Context) layout.Dimensions {
@@ -119,10 +119,10 @@ func (p *Instant) body(e *env.Env) layout.Widget {
 		choices := func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return p.disposable.Layout(gtx, e.Th, kit.ToggleBone, "Disposable")
+					return p.disposable.Layout(gtx, e.Th, "Disposable")
 				}),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return p.sealed.Layout(gtx, e.Th, kit.ToggleBone, "Sealed")
+					return p.sealed.Layout(gtx, e.Th, "Sealed")
 				}),
 			)
 		}

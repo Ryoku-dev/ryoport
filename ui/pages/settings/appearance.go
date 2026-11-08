@@ -5,7 +5,6 @@ import (
 
 	"github.com/ryoku-dev/ryoport/internal/config"
 	"github.com/ryoku-dev/ryoport/ui/env"
-	"github.com/ryoku-dev/ryoport/ui/kit"
 )
 
 var (
@@ -30,7 +29,7 @@ func (v *View) layoutAppearance(gtx layout.Context, e *env.Env) layout.Dimension
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return settingRow(gtx, e.Th, "Reduce motion", "Changes place instantly instead of moving between states.", func(gtx layout.Context) layout.Dimensions {
 				before := v.reduce.Value
-				dimensions := v.reduce.Layout(gtx, e.Th, kit.ToggleBone, "")
+				dimensions := v.reduce.Layout(gtx, e.Th, "")
 				if v.reduce.Value != before {
 					value := v.reduce.Value
 					e.Ops.UpdateSettings(func(settings *config.Settings) { settings.Appearance.ReduceMotion = value })

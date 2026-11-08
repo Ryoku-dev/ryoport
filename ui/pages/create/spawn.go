@@ -99,7 +99,7 @@ func (p *Spawn) body(e *env.Env) layout.Widget {
 			layout.Rigid(fullWidth(templatePicker)),
 			layout.Rigid(nameField),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return p.disposable.Layout(gtx, e.Th, kit.ToggleBone, "Disposable")
+				return p.disposable.Layout(gtx, e.Th, "Disposable")
 			}),
 			space(e.Th.Sp.S2),
 			layout.Rigid(actions),

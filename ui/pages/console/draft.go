@@ -230,7 +230,7 @@ func (d *Draft) form(gtx layout.Context, e *env.Env, errs consoleDraftErrors) la
 		children = append(children,
 			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S4}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.full.Layout(gtx, e.Th, kit.ToggleBone, "Open fullscreen")
+				return d.full.Layout(gtx, e.Th, "Open fullscreen")
 			}),
 		)
 	}

@@ -13,20 +13,12 @@ import (
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
-type ToggleKind int
-
-const (
-	ToggleGold ToggleKind = iota
-	ToggleBone
-)
-
 type Toggle struct {
 	widget.Bool
 	slide anim.Tween
 }
 
-func (t *Toggle) Layout(gtx layout.Context, th *theme.Theme, kind ToggleKind, label string) layout.Dimensions {
-	_ = kind
+func (t *Toggle) Layout(gtx layout.Context, th *theme.Theme, label string) layout.Dimensions {
 	for {
 		event, ok := gtx.Event(key.Filter{Focus: &t.Bool, Name: key.NameSpace})
 		if !ok {

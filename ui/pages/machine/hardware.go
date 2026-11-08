@@ -108,10 +108,10 @@ func (v *View) layoutHardware(gtx layout.Context, e *env.Env, resource model.Res
 			return v.hardware.display.Layout(pickerGTX, e.Th, "", displayOptions[:], v.hardware.displayIndex)
 		})),
 		layout.Rigid(hardwareRow(e, "TPM", "A virtual trusted platform module", func(gtx layout.Context) layout.Dimensions {
-			return v.hardware.tpm.Layout(controlGTX(gtx), e.Th, kit.ToggleBone, "")
+			return v.hardware.tpm.Layout(controlGTX(gtx), e.Th, "")
 		})),
 		layout.Rigid(hardwareRow(e, "Secure boot", "Verify the guest boot chain", func(gtx layout.Context) layout.Dimensions {
-			return v.hardware.secureBoot.Layout(controlGTX(gtx), e.Th, kit.ToggleBone, "")
+			return v.hardware.secureBoot.Layout(controlGTX(gtx), e.Th, "")
 		})),
 	)
 	dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)

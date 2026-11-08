@@ -73,7 +73,7 @@ func (v *View) layoutDefaults(gtx layout.Context, e *env.Env) layout.Dimensions 
 							if tool.Heavy {
 								label += " (large)"
 							}
-							dimensions := toggle.Layout(gtx, e.Th, kit.ToggleBone, label)
+							dimensions := toggle.Layout(gtx, e.Th, label)
 							if toggle.Value != before {
 								id, on := tool.ID, toggle.Value
 								e.Ops.UpdateSettings(func(settings *config.Settings) {

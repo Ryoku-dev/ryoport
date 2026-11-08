@@ -144,7 +144,7 @@ func (v *View) usbRow(gtx layout.Context, e *env.Env, name string, device vm.USB
 		if !editable {
 			gtx = gtx.Disabled()
 		}
-		return control.toggle.Layout(gtx, e.Th, kit.ToggleGold, "Attached")
+		return control.toggle.Layout(gtx, e.Th, "Attached")
 	})(gtx)
 	if editable && control.toggle.Value != before {
 		e.Ops.SetUSB(name, device.ID, control.toggle.Value)
