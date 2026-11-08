@@ -70,28 +70,26 @@ func (v *View) layoutUpdates(gtx layout.Context, e *env.Env) layout.Dimensions {
 			return settingRow(gtx, e.Th, state.Title, state.Detail, nil)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(8)}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						v.checkUpdate.Small = true
-						return v.checkUpdate.Layout(gtx, e.Th, kit.Gold, icons.Refresh, "Check now")
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if !e.Snap.Update.Available || !e.Snap.Update.CanInstall || e.Snap.Update.RestartPending {
-							return layout.Dimensions{}
-						}
-						v.applyUpdate.Small = true
-						return v.applyUpdate.Layout(gtx, e.Th, kit.Gold, icons.Download, "Install the update")
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						if !e.Snap.Update.RestartPending {
-							return layout.Dimensions{}
-						}
-						v.relaunch.Small = true
-						return v.relaunch.Layout(gtx, e.Th, kit.Line, icons.RestartAlt, "Restart Ryoport")
-					}),
-				)
-			})
+			return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(8)}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					v.checkUpdate.Small = true
+					return v.checkUpdate.Layout(gtx, e.Th, kit.Gold, icons.Refresh, "Check now")
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if !e.Snap.Update.Available || !e.Snap.Update.CanInstall || e.Snap.Update.RestartPending {
+						return layout.Dimensions{}
+					}
+					v.applyUpdate.Small = true
+					return v.applyUpdate.Layout(gtx, e.Th, kit.Gold, icons.Download, "Install the update")
+				}),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					if !e.Snap.Update.RestartPending {
+						return layout.Dimensions{}
+					}
+					v.relaunch.Small = true
+					return v.relaunch.Layout(gtx, e.Th, kit.Line, icons.RestartAlt, "Restart Ryoport")
+				}),
+			)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

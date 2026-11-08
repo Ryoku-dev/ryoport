@@ -55,38 +55,36 @@ func (v *View) layoutDefaults(gtx layout.Context, e *env.Env) layout.Dimensions 
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-					layout.Rigid(kit.Text(e.Th, e.Th.T.Body, e.Th.R.Fg, "Tools in cloud machines")),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Inset{Top: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-							if len(e.Snap.Catalog.ToolSets) == 0 {
-								if !e.Snap.Loaded[store.SourceCatalog] {
-									return wrapText(gtx, e.Th, e.Th.T.Caption, e.Th.R.Fg3, "Tool choices appear after the machine catalogue loads.")
-								}
-								return layout.Dimensions{}
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(kit.Text(e.Th, e.Th.T.Row, e.Th.R.Fg, "Tools in cloud machines")),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Inset{Top: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+						if len(e.Snap.Catalog.ToolSets) == 0 {
+							if !e.Snap.Loaded[store.SourceCatalog] {
+								return wrapText(gtx, e.Th, e.Th.T.Caption, e.Th.R.Fg3, "Tool choices appear after the machine catalogue loads.")
 							}
-							return kit.Columns(gtx, 180, 8, len(e.Snap.Catalog.ToolSets), func(gtx layout.Context, index int) layout.Dimensions {
-								tool := e.Snap.Catalog.ToolSets[index]
-								toggle := v.toolToggle(tool.ID, slices.Contains(e.Snap.Settings.Defaults.Tools, tool.ID))
-								before := toggle.Value
-								label := tool.Label
-								if tool.Heavy {
-									label += " (large)"
-								}
-								dimensions := toggle.Layout(gtx, e.Th, kit.ToggleBone, label)
-								if toggle.Value != before {
-									id, on := tool.ID, toggle.Value
-									e.Ops.UpdateSettings(func(settings *config.Settings) {
-										settings.Defaults.Tools = withTool(settings.Defaults.Tools, id, on)
-									})
-								}
-								return dimensions
-							})
+							return layout.Dimensions{}
+						}
+						return kit.Columns(gtx, 180, 8, len(e.Snap.Catalog.ToolSets), func(gtx layout.Context, index int) layout.Dimensions {
+							tool := e.Snap.Catalog.ToolSets[index]
+							toggle := v.toolToggle(tool.ID, slices.Contains(e.Snap.Settings.Defaults.Tools, tool.ID))
+							before := toggle.Value
+							label := tool.Label
+							if tool.Heavy {
+								label += " (large)"
+							}
+							dimensions := toggle.Layout(gtx, e.Th, kit.ToggleBone, label)
+							if toggle.Value != before {
+								id, on := tool.ID, toggle.Value
+								e.Ops.UpdateSettings(func(settings *config.Settings) {
+									settings.Defaults.Tools = withTool(settings.Defaults.Tools, id, on)
+								})
+							}
+							return dimensions
 						})
-					}),
-				)
-			})
+					})
+				}),
+			)
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {

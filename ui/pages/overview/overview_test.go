@@ -53,6 +53,27 @@ func TestLatencyBandHysteresis(t *testing.T) {
 	}
 }
 
+func TestCompactPlacementUsesNameOnlyLabels(t *testing.T) {
+	nodes := []mapNode{{
+		ID:       "machine:vm",
+		Name:     "vm",
+		Proof:    "a proof that is much wider than the name",
+		NameOnly: true,
+		Local:    true,
+	}}
+	placement := placeMap(nodes, image.Rect(0, 0, 400, 360), 40, 72, 144)
+	label := placement.Nodes[0].Label
+	if label.Empty() {
+		t.Fatal("compact node label was not placed")
+	}
+	if label.Dy() != 16 {
+		t.Fatalf("compact label height = %d, want 16", label.Dy())
+	}
+	if label.Dx() != 48 {
+		t.Fatalf("compact label width = %d, want name-only width 48", label.Dx())
+	}
+}
+
 func TestPlacementLabelsDoNotOverlapForFleet(t *testing.T) {
 	nodes := realFleetNodes()
 	placement := placeMap(nodes, image.Rect(0, 0, 690, 700), 70, 120, 280)

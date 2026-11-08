@@ -23,14 +23,15 @@ import (
 )
 
 type View struct {
-	rings        anim.Tween
-	ringProgress float32
-	ringActive   bool
-	started      bool
-	alertButtons map[string]*kit.Button
-	jobButtons   map[string]*kit.Button
-	nodeClicks   map[model.ID]*widget.Clickable
-	nodeMotion   map[model.ID]*pointMotion
+	rings         anim.Tween
+	ringProgress  float32
+	ringActive    bool
+	started       bool
+	attentionList kit.List
+	alertButtons  map[string]*kit.Button
+	jobButtons    map[string]*kit.Button
+	nodeClicks    map[model.ID]*widget.Clickable
+	nodeMotion    map[model.ID]*pointMotion
 }
 
 type pointMotion struct {
@@ -79,9 +80,18 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				if stacked {
-					return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(unit.Dp(14))}.Layout(gtx,
+					gap := gtx.Dp(unit.Dp(14))
+					attentionMax := gtx.Constraints.Max.Y * 2 / 5
+					if reserve := gtx.Constraints.Max.Y - gap - gtx.Dp(unit.Dp(360)); reserve >= 0 {
+						attentionMax = min(attentionMax, reserve)
+					}
+					return layout.Flex{Axis: layout.Vertical, Gap: gap}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return v.layoutAttention(gtx, e)
+							gtx.Constraints.Min.Y = 0
+							gtx.Constraints.Max.Y = attentionMax
+							return v.attentionList.Layout(gtx, e.Th, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+								return v.layoutAttention(gtx, e)
+							})
 						}),
 						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 							return v.layoutMap(gtx, e, progress)

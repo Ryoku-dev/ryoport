@@ -82,42 +82,54 @@ func (v *View) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	v.handleButtons(gtx, e)
 	paint.FillShape(gtx.Ops, e.Th.R.Stone2, clip.Rect{Max: gtx.Constraints.Max}.Op())
 	return layout.Inset{Top: 34, Bottom: 34, Left: 36, Right: 36}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		return v.list.Layout(gtx, e.Th, 8, func(gtx layout.Context, index int) layout.Dimensions {
-			switch index {
-			case 0:
-				return layout.Inset{Bottom: 21}.Layout(gtx, kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, "Settings"))
-			case 1:
-				return settingsSection(gtx, e.Th, "Appearance", func(gtx layout.Context) layout.Dimensions {
-					return v.layoutAppearance(gtx, e)
-				})
-			case 2:
-				return settingsSection(gtx, e.Th, "New machines", func(gtx layout.Context) layout.Dimensions {
-					return v.layoutDefaults(gtx, e)
-				})
-			case 3:
-				return settingsSection(gtx, e.Th, "VM engine", func(gtx layout.Context) layout.Dimensions {
-					return v.layoutEngine(gtx, e)
-				})
-			case 4:
-				return settingsSection(gtx, e.Th, "GPU passthrough", func(gtx layout.Context) layout.Dimensions {
-					return v.layoutGPU(gtx, e)
-				})
-			case 5:
-				return settingsSection(gtx, e.Th, "SSH keys", func(gtx layout.Context) layout.Dimensions {
-					return v.layoutKeys(gtx, e)
-				})
-			case 6:
-				return settingsSection(gtx, e.Th, "Updates", func(gtx layout.Context) layout.Dimensions {
-					return v.layoutUpdates(gtx, e)
-				})
-			case 7:
-				return settingsSection(gtx, e.Th, "About", func(gtx layout.Context) layout.Dimensions {
-					return v.layoutAbout(gtx, e)
-				})
-			default:
-				return layout.Dimensions{}
-			}
-		})
+		width := min(gtx.Constraints.Max.X, gtx.Dp(760))
+		return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = width
+				gtx.Constraints.Max.X = width
+				return v.layoutList(gtx, e)
+			}),
+			layout.Flexed(1, layout.Spacer{}.Layout),
+		)
+	})
+}
+
+func (v *View) layoutList(gtx layout.Context, e *env.Env) layout.Dimensions {
+	return v.list.Layout(gtx, e.Th, 8, func(gtx layout.Context, index int) layout.Dimensions {
+		switch index {
+		case 0:
+			return layout.Inset{Bottom: 21}.Layout(gtx, kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, "Settings"))
+		case 1:
+			return settingsSection(gtx, e.Th, "Appearance", func(gtx layout.Context) layout.Dimensions {
+				return v.layoutAppearance(gtx, e)
+			})
+		case 2:
+			return settingsSection(gtx, e.Th, "New machines", func(gtx layout.Context) layout.Dimensions {
+				return v.layoutDefaults(gtx, e)
+			})
+		case 3:
+			return settingsSection(gtx, e.Th, "VM engine", func(gtx layout.Context) layout.Dimensions {
+				return v.layoutEngine(gtx, e)
+			})
+		case 4:
+			return settingsSection(gtx, e.Th, "GPU passthrough", func(gtx layout.Context) layout.Dimensions {
+				return v.layoutGPU(gtx, e)
+			})
+		case 5:
+			return settingsSection(gtx, e.Th, "SSH keys", func(gtx layout.Context) layout.Dimensions {
+				return v.layoutKeys(gtx, e)
+			})
+		case 6:
+			return settingsSection(gtx, e.Th, "Updates", func(gtx layout.Context) layout.Dimensions {
+				return v.layoutUpdates(gtx, e)
+			})
+		case 7:
+			return settingsSection(gtx, e.Th, "About", func(gtx layout.Context) layout.Dimensions {
+				return v.layoutAbout(gtx, e)
+			})
+		default:
+			return layout.Dimensions{}
+		}
 	})
 }
 
@@ -208,10 +220,8 @@ func (v *View) layoutEngine(gtx layout.Context, e *env.Env) layout.Dimensions {
 			if engine.Ready {
 				return layout.Dimensions{}
 			}
-			return layout.Inset{Top: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return sectionAction(gtx, func(gtx layout.Context) layout.Dimensions {
-					return v.installEngine.Layout(gtx, e.Th, kit.Gold, icons.InstallDesktop, "Install the engine")
-				})
+			return sectionAction(gtx, func(gtx layout.Context) layout.Dimensions {
+				return v.installEngine.Layout(gtx, e.Th, kit.Gold, icons.InstallDesktop, "Install the engine")
 			})
 		}),
 	)
@@ -235,11 +245,9 @@ func (v *View) layoutGPU(gtx layout.Context, e *env.Env) layout.Dimensions {
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return sectionAction(gtx, func(gtx layout.Context) layout.Dimensions {
-					v.openGPU.Small = true
-					return v.openGPU.Layout(gtx, e.Th, kit.Line, icons.Hub, "Open GPU settings")
-				})
+			return sectionAction(gtx, func(gtx layout.Context) layout.Dimensions {
+				v.openGPU.Small = true
+				return v.openGPU.Layout(gtx, e.Th, kit.Line, icons.Hub, "Open GPU settings")
 			})
 		}),
 	)
@@ -247,12 +255,16 @@ func (v *View) layoutGPU(gtx layout.Context, e *env.Env) layout.Dimensions {
 
 func (v *View) layoutKeys(gtx layout.Context, e *env.Env) layout.Dimensions {
 	count := len(e.Snap.Keys.Files) + len(e.Snap.Keys.Agent)
+	actionTop := unit.Dp(13)
+	if count > 0 {
+		actionTop = 0
+	}
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			if count == 0 {
 				return wrapText(gtx, e.Th, e.Th.T.Body, e.Th.R.Fg2, "No SSH keys found. Make an Ed25519 key to deploy to your servers.")
 			}
-			return column(gtx, count, 8, func(gtx layout.Context, index int) layout.Dimensions {
+			return column(gtx, count, 0, func(gtx layout.Context, index int) layout.Dimensions {
 				if index < len(e.Snap.Keys.Files) {
 					key := e.Snap.Keys.Files[index]
 					return settingRow(gtx, e.Th, key.Comment, key.Path, kit.Text(e.Th, e.Th.T.MonoSm, e.Th.R.Fg3, key.Fingerprint))
@@ -266,7 +278,7 @@ func (v *View) layoutKeys(gtx layout.Context, e *env.Env) layout.Dimensions {
 			})
 		}),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{Top: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{Top: actionTop}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return sectionAction(gtx, func(gtx layout.Context) layout.Dimensions {
 					v.makeKey.Small = true
 					return v.makeKey.Layout(gtx, e.Th, kit.Line, icons.Key, "Make a key")
@@ -280,7 +292,16 @@ func settingsSection(gtx layout.Context, th *theme.Theme, title string, body lay
 	return layout.Inset{Bottom: 21}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layout.Inset{Bottom: 13}.Layout(gtx, kit.Text(th, th.T.Title, th.R.Fg, title))
+				return layout.Inset{Bottom: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(13)}.Layout(gtx,
+						layout.Rigid(kit.Text(th, th.T.Section, th.R.Fg, title)),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							size := image.Pt(gtx.Constraints.Max.X, max(1, gtx.Dp(1)))
+							paint.FillShape(gtx.Ops, th.R.Vein, clip.Rect{Max: size}.Op())
+							return layout.Dimensions{Size: size}
+						}),
+					)
+				})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return kit.Slab(gtx, th.R.Stone1, th.Cut.Mid, func(gtx layout.Context) layout.Dimensions {
@@ -296,7 +317,7 @@ func sectionAction(gtx layout.Context, action layout.Widget) layout.Dimensions {
 }
 
 func settingRow(gtx layout.Context, th *theme.Theme, title, detail string, control layout.Widget) layout.Dimensions {
-	return layout.Inset{Top: 8, Bottom: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	return layout.Inset{Bottom: 13}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(21)}.Layout(gtx,
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
@@ -304,7 +325,7 @@ func settingRow(gtx layout.Context, th *theme.Theme, title, detail string, contr
 						if title == "" {
 							return layout.Dimensions{}
 						}
-						return wrapText(gtx, th, th.T.Body, th.R.Fg, title)
+						return wrapText(gtx, th, th.T.Row, th.R.Fg, title)
 					}),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 						if detail == "" {
@@ -320,6 +341,8 @@ func settingRow(gtx layout.Context, th *theme.Theme, title, detail string, contr
 				if control == nil {
 					return layout.Dimensions{}
 				}
+				gtx.Constraints.Min.X = 0
+				gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(320))
 				return control(gtx)
 			}),
 		)

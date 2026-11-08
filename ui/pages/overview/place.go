@@ -17,6 +17,7 @@ type mapNode struct {
 	RTTMs         int
 	RadiusBand    float64
 	RadiusBandSet bool
+	NameOnly      bool
 	Local         bool
 	Tone          model.Tone
 	Progress      float64
@@ -152,14 +153,17 @@ func placeNodes(nodes []mapNode, bounds image.Rectangle, inner, oneMS, outer flo
 	}
 
 	const (
-		labelHeight = 31
-		labelGap    = 3
-		margin      = 8
-		centerGap   = 12
+		labelGap  = 3
+		margin    = 8
+		centerGap = 12
 	)
 	for i := range placed {
 		point := placed[i].Point
 		width := labelWidth(nodes[i], max(48, bounds.Dx()/2-centerGap-margin*2))
+		height := 31
+		if nodes[i].NameOnly {
+			height = 16
+		}
 		right := point.X >= center.X
 		var x int
 		if right {
@@ -169,9 +173,9 @@ func placeNodes(nodes []mapNode, bounds image.Rectangle, inner, oneMS, outer flo
 			x = min(point.X-15-width, center.X-centerGap-width)
 			x = max(x, bounds.Min.X+margin)
 		}
-		y := point.Y - labelHeight/2
-		y = max(bounds.Min.Y+margin, min(y, bounds.Max.Y-margin-labelHeight))
-		placed[i].Label = image.Rect(x, y, x+width, y+labelHeight)
+		y := point.Y - height/2
+		y = max(bounds.Min.Y+margin, min(y, bounds.Max.Y-margin-height))
+		placed[i].Label = image.Rect(x, y, x+width, y+height)
 		placed[i].LabelRight = right
 	}
 	nodesOnly := nodeObstacles(placed)
@@ -196,8 +200,11 @@ func radialPoint(center image.Point, radius, angle float64) image.Point {
 
 func labelWidth(node mapNode, maximum int) int {
 	name := 8 + len([]rune(node.Name))*7
-	proof := 8 + len([]rune(node.Proof))*6
-	width := max(48, max(name, proof))
+	width := max(48, name)
+	if !node.NameOnly {
+		proof := 8 + len([]rune(node.Proof))*6
+		width = max(width, proof)
+	}
 	return min(maximum, width)
 }
 
