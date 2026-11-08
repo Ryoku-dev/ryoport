@@ -90,12 +90,7 @@ func Tooltip(gtx layout.Context, th *theme.Theme, tip string, w layout.Widget) l
 
 	viewport := image.Rect(0, -gtx.Constraints.Max.Y, gtx.Constraints.Max.X, gtx.Constraints.Max.Y)
 	anchor := image.Rectangle{Max: dims.Size}
-	position := placePopover(viewport, anchor, tipDims.Size)
-	if position.Y >= anchor.Max.Y {
-		position.Y += gtx.Dp(8)
-	} else {
-		position.Y -= gtx.Dp(8)
-	}
+	position := placePopover(viewport, anchor, tipDims.Size, gtx.Dp(8))
 	position.Y += int(float32(gtx.Dp(8)) * (1 - progress))
 
 	overlay := op.Record(gtx.Ops)

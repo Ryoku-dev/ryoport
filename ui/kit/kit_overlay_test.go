@@ -4,7 +4,87 @@ import (
 	"image"
 	"testing"
 	"time"
+
+	"gioui.org/f32"
+	"gioui.org/io/input"
+	"gioui.org/io/pointer"
+	"gioui.org/layout"
+	"gioui.org/op"
 )
+
+// popoverScene draws a window-sized clickable, then a popover anchored at
+// (12, 168) the way the rail draws the New menu, with one clickable item.
+type popoverScene struct {
+	router input.Router
+	pop    Popover
+	under  Click
+	item   Click
+}
+
+func (s *popoverScene) frame() layout.Context {
+	ops := new(op.Ops)
+	gtx := layout.Context{
+		Ops:         ops,
+		Source:      s.router.Source(),
+		Constraints: layout.Exact(image.Pt(800, 600)),
+		Now:         time.Now(),
+	}
+	s.under.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: gtx.Constraints.Max}
+	})
+	offset := op.Offset(image.Pt(12, 168)).Push(ops)
+	anchorCtx := gtx
+	anchorCtx.Constraints.Min = image.Point{}
+	s.pop.Layout(anchorCtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Dimensions{Size: image.Pt(64, 64)}
+	}, func(gtx layout.Context) layout.Dimensions {
+		return s.item.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(200, 120)}
+		})
+	})
+	offset.Pop()
+	s.router.Frame(ops)
+	return gtx
+}
+
+func (s *popoverScene) press(at f32.Point) {
+	s.router.Queue(
+		pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: at},
+		pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: at},
+	)
+}
+
+func TestPopoverKeepsPressesInsideItsContent(t *testing.T) {
+	var scene popoverScene
+	scene.pop.Open = true
+	scene.frame()
+	// The item sits 8 px under the 64 px anchor: about (12, 240) to (212, 360).
+	scene.press(f32.Pt(80, 300))
+	gtx := scene.frame()
+	if !scene.pop.Open {
+		t.Fatal("a press on the popover's item closed the popover")
+	}
+	if !scene.item.Clicked(gtx) {
+		t.Fatal("the popover's item did not receive the click")
+	}
+	if scene.under.Clicked(gtx) {
+		t.Fatal("a press on the popover also reached the widget underneath")
+	}
+}
+
+func TestPopoverOutsidePressClosesAndStops(t *testing.T) {
+	var scene popoverScene
+	scene.pop.Open = true
+	scene.frame()
+	scene.press(f32.Pt(600, 500))
+	gtx := scene.frame()
+	if scene.pop.Open {
+		t.Fatal("a press outside the popover left it open")
+	}
+	if scene.under.Clicked(gtx) {
+		t.Fatal("the press that closed the popover also clicked what was underneath")
+	}
+}
 
 func TestPlacardExpiryOrderingAndStacking(t *testing.T) {
 	base := time.Unix(100, 0)
@@ -35,19 +115,19 @@ func TestPopoverPlacementFlipsAndClamps(t *testing.T) {
 			name:    "below",
 			anchor:  image.Rect(50, 40, 150, 80),
 			content: image.Pt(100, 60),
-			want:    image.Pt(50, 80),
+			want:    image.Pt(50, 88),
 		},
 		{
 			name:    "above when below does not fit",
 			anchor:  image.Rect(60, 250, 160, 280),
 			content: image.Pt(80, 100),
-			want:    image.Pt(60, 150),
+			want:    image.Pt(60, 142),
 		},
 		{
 			name:    "horizontal clamp",
 			anchor:  image.Rect(280, 40, 295, 80),
 			content: image.Pt(80, 60),
-			want:    image.Pt(220, 80),
+			want:    image.Pt(220, 88),
 		},
 		{
 			name:    "vertical clamp when neither side fits",
@@ -63,7 +143,7 @@ func TestPopoverPlacementFlipsAndClamps(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := placePopover(viewport, test.anchor, test.content); got != test.want {
+			if got := placePopover(viewport, test.anchor, test.content, 8); got != test.want {
 				t.Fatalf("placePopover() = %v, want %v", got, test.want)
 			}
 		})
