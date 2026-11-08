@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -75,8 +76,8 @@ func applyBuildEvent(job *model.Job, event build.Event) {
 	case build.PhaseError:
 		job.Phase = firstNonempty(event.Message, "Failed")
 	case build.PhaseLog:
-		if strings.TrimSpace(event.Line) != "" && job.Progress < 0 {
-			job.Phase = strings.TrimSpace(event.Line)
+		if line := cleanLogLine(event.Line); line != "" {
+			job.Detail = line
 		}
 	}
 	if event.Progress != nil {
@@ -88,6 +89,26 @@ func applyBuildEvent(job *model.Job, event build.Event) {
 			job.Progress = clamp01(float64(job.Done) / float64(job.Total))
 		}
 	}
+}
+
+// cleanLogLine turns a line of quickget or download output into something a
+// person reads at a glance: list bullets go, a bare "URL: ..." line becomes
+// the host it comes from, and runs of spaces collapse.
+func cleanLogLine(line string) string {
+	line = strings.Join(strings.Fields(line), " ")
+	for _, bullet := range []string{"- ", "* ", "> "} {
+		line = strings.TrimPrefix(line, bullet)
+	}
+	if rest, ok := strings.CutPrefix(line, "URL: "); ok {
+		if parsed, err := url.Parse(strings.TrimSpace(rest)); err == nil && parsed.Host != "" {
+			return "From " + parsed.Host
+		}
+	}
+	const most = 120
+	if runes := []rune(line); len(runes) > most {
+		line = string(runes[:most-1]) + "…"
+	}
+	return line
 }
 
 func (s *Store) finishJob(id, result, successVerb string, err error) {

@@ -83,6 +83,9 @@ func jobSummary(job model.Job) string {
 	if progress := jobProgressSummary(job); progress != "" {
 		return phase + ", " + progress
 	}
+	if detail := strings.TrimSpace(job.Detail); detail != "" {
+		return phase + ". " + detail
+	}
 	return phase
 }
 

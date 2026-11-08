@@ -203,10 +203,14 @@ func TestJobMappingFromBuildEvents(t *testing.T) {
 	if job.Phase != "Writing config" {
 		t.Fatalf("config phase = %q", job.Phase)
 	}
-	unknown := model.Job{Progress: -1}
-	applyBuildEvent(&unknown, build.Event{Phase: build.PhaseLog, Line: "Preparing disk"})
-	if unknown.Phase != "Preparing disk" {
-		t.Fatalf("log phase = %q", unknown.Phase)
+	applyBuildEvent(&job, build.Event{Phase: build.PhaseDownload})
+	applyBuildEvent(&job, build.Event{Phase: build.PhaseLog, Line: "- URL: http://builds.kolibrios.org/en_US/latest-iso.7z"})
+	if job.Phase != "Downloading" || job.Detail != "From builds.kolibrios.org" {
+		t.Fatalf("a tool line must not replace the stage: phase %q, detail %q", job.Phase, job.Detail)
+	}
+	applyBuildEvent(&job, build.Event{Phase: build.PhaseLog, Line: "   "})
+	if job.Detail != "From builds.kolibrios.org" {
+		t.Fatalf("a blank line cleared the detail: %q", job.Detail)
 	}
 }
 

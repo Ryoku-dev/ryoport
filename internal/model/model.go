@@ -213,6 +213,7 @@ type Job struct {
 	Target     ID
 	Title      string  // "Ubuntu 24.04"
 	Phase      string  // "Downloading", "Writing config"
+	Detail     string  // the tool's latest line, cleaned: "From builds.kolibrios.org"
 	Progress   float64 // 0..1, or -1 when unknown
 	Done       int64   // bytes, when the job moves bytes
 	Total      int64

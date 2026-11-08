@@ -83,12 +83,20 @@ func creationSteps(job model.Job, machine *store.Machine, e *env.Env) [4]creatio
 	if imageName == "" {
 		imageName = "Machine image"
 	}
-	return [4]creationStep{
+	steps := [4]creationStep{
 		{title: "Find the image", detail: imageName, status: states[0]},
 		{title: "Download", detail: "Receiving the machine image", status: states[1]},
 		{title: "Write the config", detail: fmt.Sprintf("%d cores, %d GB, %d GB disk", cores, ram, disk), status: states[2]},
 		{title: "First boot", detail: "Prepare the window and SSH key", status: states[3]},
 	}
+	if detail := strings.TrimSpace(job.Detail); detail != "" {
+		for i := range steps {
+			if steps[i].status == stepCurrent {
+				steps[i].detail = detail
+			}
+		}
+	}
+	return steps
 }
 
 func (v *View) layoutBecoming(gtx layout.Context, e *env.Env, resource model.Resource, machine *store.Machine, job model.Job) layout.Dimensions {
