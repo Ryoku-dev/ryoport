@@ -60,6 +60,7 @@ func (t *Tabs) poll(gtx layout.Context) {
 			if next != i {
 				t.changed, t.pending = next, true
 				gtx.Execute(key.FocusCmd{Tag: &t.tabs[next].Clickable})
+				gtx.Execute(op.InvalidateCmd{})
 			}
 		}
 	}

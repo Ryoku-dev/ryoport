@@ -16,7 +16,11 @@ type Click struct {
 	pendingDouble int
 }
 
-// Update reports one click, taking it from the latch first.
+// Update reports one click, taking it from the latch first. Taking a click
+// asks for one more frame: whoever takes it may only act after this frame
+// was drawn (tabs and menus remember a click for their page to collect), and
+// without another frame the change would wait for the next pointer move or
+// store update, seconds later.
 func (c *Click) Update(gtx layout.Context) (widget.Click, bool) {
 	if c.pending > 0 {
 		c.pending--
@@ -25,9 +29,14 @@ func (c *Click) Update(gtx layout.Context) (widget.Click, bool) {
 			c.pendingDouble--
 			click.NumClicks = 2
 		}
+		gtx.Execute(op.InvalidateCmd{})
 		return click, true
 	}
-	return c.Clickable.Update(gtx)
+	click, ok := c.Clickable.Update(gtx)
+	if ok {
+		gtx.Execute(op.InvalidateCmd{})
+	}
+	return click, ok
 }
 
 // Clicked reports one click, taking it from the latch first.

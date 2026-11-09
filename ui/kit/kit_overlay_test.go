@@ -11,8 +11,46 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
+
+// A page collects a tab click on the frame after the tabs drew it. Without
+// a request for that frame the switch waited for the next pointer move or
+// store update, seconds later.
+func TestTabClickAsksForTheFrameThatShowsIt(t *testing.T) {
+	anim.SetReduce(true) // hover fades would request frames of their own
+	t.Cleanup(func() { anim.SetReduce(false) })
+	var router input.Router
+	var tabs Tabs
+	th := theme.New(theme.Signature(true), theme.Shaper())
+	labels := []string{"Overview", "Access", "Tunnels"}
+	selected := 0
+	frame := func() {
+		ops := new(op.Ops)
+		gtx := layout.Context{Ops: ops, Source: router.Source(), Constraints: layout.Exact(image.Pt(800, 100)), Now: time.Unix(100, 0)}
+		if index, ok := tabs.Changed(gtx); ok {
+			selected = index
+		}
+		tabs.Layout(gtx, th, labels, selected)
+		router.Frame(ops)
+	}
+	frame()
+	router.WakeupTime()
+	at := f32.Pt(float32(tabs.widths[0]+tabs.widths[1]+tabs.widths[2]/2), 20)
+	router.Queue(
+		pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: at},
+		pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: at},
+	)
+	frame()
+	if _, wake := router.WakeupTime(); !wake {
+		t.Fatal("a tab click did not ask for the frame that shows it")
+	}
+	frame()
+	if selected != 2 {
+		t.Fatalf("selected tab = %d after the click, want 2", selected)
+	}
+}
 
 // popoverScene draws a window-sized clickable, then a popover anchored at
 // (12, 168) the way the rail draws the New menu, with one clickable item.
