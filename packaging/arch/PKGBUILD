@@ -23,6 +23,7 @@ makedepends=(
   'base-devel'
   'go'
   'pkgconf'
+  'vulkan-headers'
 )
 optdepends=(
   'quickemu: create and run quickemu machines'
