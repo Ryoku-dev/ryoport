@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ryoku-dev/ryoport/internal/build"
+	"github.com/ryoku-dev/ryoport/internal/hoststat"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/passthrough"
 	"github.com/ryoku-dev/ryoport/internal/qmp"
@@ -18,6 +22,17 @@ import (
 	"github.com/ryoku-dev/ryoport/internal/vm"
 	"golang.org/x/sys/unix"
 )
+
+// sentenceStart capitalises the first letter of text the Ryoku hub writes
+// in lower case, so it reads as a sentence wherever the window shows it.
+func sentenceStart(text string) string {
+	text = strings.TrimSpace(text)
+	first, size := utf8.DecodeRuneInString(text)
+	if size == 0 || !unicode.IsLower(first) {
+		return text
+	}
+	return string(unicode.ToUpper(first)) + text[size:]
+}
 
 type pollSource uint8
 
@@ -29,6 +44,7 @@ const (
 	pollServerProbe
 	pollWebApps
 	pollPassthrough
+	pollHostStats
 )
 
 func interval(source pollSource, focus Focus, selected, battery bool) time.Duration {
@@ -76,6 +92,15 @@ func interval(source pollSource, focus Focus, selected, battery bool) time.Durat
 		} else if focus.Visible {
 			value = 30 * time.Second
 		}
+	case pollHostStats:
+		// The board is glanced at, not watched: it refreshes briskly only
+		// while the window has focus, since every refresh is a new frame.
+		boardVisible := focus.Visible && focus.Page == PageFleet && focus.Selected == ""
+		if boardVisible && focus.Focused {
+			value = 3 * time.Second
+		} else if boardVisible {
+			value = 15 * time.Second
+		}
 	}
 	if battery && value > 0 {
 		value *= 2
@@ -87,6 +112,7 @@ func (s *Store) startPollers() {
 	go s.cadenceLoop(pollMachineList, s.refreshMachines)
 	go s.cadenceLoop(pollServerReach, s.refreshReachability)
 	go s.cadenceLoop(pollWebApps, s.refreshApps)
+	go s.cadenceLoop(pollHostStats, s.refreshHostStats)
 	if s.host.Passthrough {
 		go s.cadenceLoop(pollPassthrough, s.refreshPassthrough)
 	}
@@ -160,10 +186,13 @@ func (s *Store) Refresh() {
 	go s.refreshAllProbes()
 	go s.refreshApps()
 	s.mu.Lock()
-	selected := s.focus.Selected
+	focus := s.focus
 	s.mu.Unlock()
-	if selected.Kind() == model.KindMachine {
-		go s.refreshMachineAux(selected.Key())
+	if focus.Page == PageFleet && focus.Selected == "" && focus.Visible {
+		go s.refreshHostStats()
+	}
+	if focus.Selected.Kind() == model.KindMachine {
+		go s.refreshMachineAux(focus.Selected.Key())
 	}
 	if s.Snapshot().Host.Passthrough {
 		go s.refreshPassthrough()
@@ -397,7 +426,7 @@ func (s *Store) refreshPassthrough() {
 		}
 		result[item.Name] = entry
 	}
-	gpu := passthrough.Readiness{Ready: list.Ready, Blocker: list.Blocker}
+	gpu := passthrough.Readiness{Ready: list.Ready, Blocker: sentenceStart(list.Blocker)}
 	s.mu.Lock()
 	changed := !reflect.DeepEqual(s.passthrough, result) || s.gpu != gpu
 	if changed {
@@ -435,6 +464,7 @@ func (s *Store) machineStatsLoop() {
 				delete(last, selected.Key())
 			}
 		}
+		boardVisible := focus.Visible && focus.Page == PageFleet && selected == ""
 		now := s.o.Now()
 		var next time.Duration
 		var due []string
@@ -443,6 +473,9 @@ func (s *Store) machineStatsLoop() {
 				continue
 			}
 			isSelected := selected == model.NewID(model.KindMachine, name)
+			if !isSelected && !boardVisible {
+				continue
+			}
 			source := pollSparklines
 			if isSelected {
 				source = pollMachineStats
@@ -485,6 +518,53 @@ func (s *Store) machineStatsLoop() {
 		case <-timer.C:
 		}
 	}
+}
+
+func (s *Store) refreshHostStats() {
+	sample, err := hoststat.Read(s.o.VM.Root, s.o.Now())
+	if err != nil {
+		return
+	}
+
+	s.mu.Lock()
+	stats := HostStats{
+		Cores:       sample.CPU.Cores,
+		MemoryUsed:  sample.Memory.Total - sample.Memory.Available,
+		MemoryTotal: sample.Memory.Total,
+		VMDiskFree:  sample.DiskFree,
+		VMDiskTotal: sample.DiskTotal,
+	}
+	if s.hostCPUSeen {
+		stats.CPUFraction, stats.CPUValid = hoststat.CPUFraction(s.hostCPU, sample.CPU)
+	}
+	s.hostCPU = sample.CPU
+	s.hostCPUSeen = true
+	changed := hostStatsShowDifferently(stats, s.hostStats)
+	if changed {
+		stats.SampledAt = sample.At
+		s.hostStats = stats
+		s.publishLocked()
+	}
+	s.mu.Unlock()
+	if changed {
+		s.o.Invalidate()
+	}
+}
+
+// hostStatsShowDifferently reports whether two samples would read differently
+// on the board, which shows whole percents and tenths of a gigabyte. Memory
+// and disk move by a few bytes on every sample; publishing those would draw
+// a frame for nothing.
+func hostStatsShowDifferently(a, b HostStats) bool {
+	percent := func(f float64) int64 { return int64(math.Round(f * 100)) }
+	tenth := func(v uint64) uint64 { return (v + 50_000_000) / 100_000_000 }
+	return percent(a.CPUFraction) != percent(b.CPUFraction) ||
+		a.CPUValid != b.CPUValid ||
+		a.Cores != b.Cores ||
+		tenth(a.MemoryUsed) != tenth(b.MemoryUsed) ||
+		tenth(a.MemoryTotal) != tenth(b.MemoryTotal) ||
+		tenth(a.VMDiskFree) != tenth(b.VMDiskFree) ||
+		tenth(a.VMDiskTotal) != tenth(b.VMDiskTotal)
 }
 
 func (s *Store) refreshMachineStats(name string) {

@@ -78,6 +78,21 @@ func (s *Store) pushNoticeLocked(level model.EventLevel, text string, target mod
 	s.notices = next
 }
 
+// StartDisplay is how a plain Start opens a machine: the display chosen in
+// Settings, falling back to a window when SPICE was chosen but no SPICE
+// viewer is installed, so Start never opens a machine nobody can see.
+func StartDisplay(snap *Snapshot) vm.Display {
+	switch display := vm.Display(snap.Settings.Defaults.Display); display {
+	case vm.DisplayHeadless:
+		return display
+	case vm.DisplaySpice:
+		if snap.Host.Engine.Spice {
+			return display
+		}
+	}
+	return vm.DisplayWindow
+}
+
 func (s *Store) Primary(id model.ID) {
 	snap := s.Snapshot()
 	resource, ok := snap.Resource(id)
@@ -88,11 +103,7 @@ func (s *Store) Primary(id model.ID) {
 	case model.KindMachine:
 		machine := snap.Machines[id.Key()]
 		if resource.Primary == model.VerbStart {
-			display := vm.Display(snap.Settings.Defaults.Display)
-			if display != vm.DisplaySpice && display != vm.DisplayHeadless {
-				display = vm.DisplayWindow
-			}
-			s.Start(id.Key(), display, false)
+			s.Start(id.Key(), StartDisplay(snap), false)
 		} else if resource.Primary == model.VerbOpen && machine != nil && (machine.Display == string(vm.DisplayHeadless) || machine.Display == "none") && machine.SSH != "" {
 			s.OpenSSH(id.Key())
 		} else if resource.Primary == model.VerbOpen {

@@ -61,6 +61,18 @@ type Host struct {
 	Install     update.Install
 }
 
+// HostStats is the local computer sample shown by the fleet board.
+type HostStats struct {
+	CPUFraction float64
+	CPUValid    bool
+	Cores       int
+	MemoryUsed  uint64
+	MemoryTotal uint64
+	VMDiskFree  uint64
+	VMDiskTotal uint64
+	SampledAt   time.Time
+}
+
 type Machine struct {
 	vm.Detail
 	Stats    *qmp.Stats
@@ -114,6 +126,7 @@ type Snapshot struct {
 	Rev         uint64
 	At          time.Time
 	Host        Host
+	HostStats   HostStats
 	Settings    config.Settings
 	Resources   []model.Resource
 	Machines    map[string]*Machine

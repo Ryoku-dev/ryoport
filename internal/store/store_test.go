@@ -66,6 +66,34 @@ func TestIntervalTable(t *testing.T) {
 	}
 }
 
+func TestHostStatsIntervalOnlyRunsForVisibleBoard(t *testing.T) {
+	board := Focus{Visible: true, Focused: true, Page: PageFleet}
+	if got := interval(pollHostStats, board, false, false); got != 3*time.Second {
+		t.Fatalf("focused board interval = %v, want 3s", got)
+	}
+	if got := interval(pollHostStats, board, false, true); got != 6*time.Second {
+		t.Fatalf("focused board on battery = %v, want 6s", got)
+	}
+	board.Focused = false
+	if got := interval(pollHostStats, board, false, false); got != 15*time.Second {
+		t.Fatalf("visible board interval = %v, want 15s", got)
+	}
+	board.Selected = model.NewID(model.KindMachine, "lab")
+	if got := interval(pollHostStats, board, false, false); got != 0 {
+		t.Fatalf("selected resource interval = %v, want off", got)
+	}
+	board.Selected = ""
+	board.Page = PageActivity
+	if got := interval(pollHostStats, board, false, false); got != 0 {
+		t.Fatalf("activity interval = %v, want off", got)
+	}
+	board.Page = PageFleet
+	board.Visible = false
+	if got := interval(pollHostStats, board, false, false); got != 0 {
+		t.Fatalf("hidden board interval = %v, want off", got)
+	}
+}
+
 func TestServerState(t *testing.T) {
 	tests := []struct {
 		name  string

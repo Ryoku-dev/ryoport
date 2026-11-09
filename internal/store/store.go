@@ -9,6 +9,7 @@ import (
 	"github.com/ryoku-dev/ryoport/internal/config"
 	"github.com/ryoku-dev/ryoport/internal/console"
 	"github.com/ryoku-dev/ryoport/internal/events"
+	"github.com/ryoku-dev/ryoport/internal/hoststat"
 	"github.com/ryoku-dev/ryoport/internal/keyring"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/passthrough"
@@ -48,6 +49,9 @@ type Store struct {
 	wake     chan struct{}
 
 	host           Host
+	hostStats      HostStats
+	hostCPU        hoststat.CPUCounters
+	hostCPUSeen    bool
 	settings       config.Settings
 	machines       map[string]*Machine
 	passthrough    map[string]*Passthrough
@@ -170,6 +174,7 @@ func (s *Store) publishLocked() {
 		Rev:         s.rev,
 		At:          now,
 		Host:        s.host,
+		HostStats:   s.hostStats,
 		Settings:    cloneSettings(s.settings),
 		Machines:    cloneMachines(s.machines),
 		Passthrough: clonePassthrough(s.passthrough),
