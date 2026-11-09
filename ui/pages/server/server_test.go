@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,31 @@ func TestProofSentenceFailedUnits(t *testing.T) {
 		spans := proofSentence(server, nil, model.StateDegraded, time.Time{}, time.Time{})
 		if len(spans) != 1 || spans[0].Text != test.want {
 			t.Errorf("proofSentence() with %d failed units = %#v, want %q", test.count, spans, test.want)
+		}
+	}
+}
+
+func TestServerDraftPreviewFollowsHostFields(t *testing.T) {
+	got := serverDraftPreview(remote.HostInput{
+		Alias:        "build",
+		HostName:     "build.example.com",
+		User:         "builder",
+		Port:         2222,
+		IdentityFile: "~/.ssh/id_build",
+		ProxyJump:    "bastion",
+	})
+	for _, want := range []string{
+		"Host build",
+		"    HostName build.example.com",
+		"    User builder",
+		"    Port 2222",
+		"    ControlMaster auto",
+		"    ControlPersist 60",
+		"    IdentityFile ~/.ssh/id_build",
+		"    ProxyJump bastion",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("serverDraftPreview() = %q, missing %q", got, want)
 		}
 	}
 }

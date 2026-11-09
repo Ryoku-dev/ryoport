@@ -9,14 +9,17 @@ import (
 	"github.com/ryoku-dev/ryoport/internal/build"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/vm"
+	"github.com/ryoku-dev/ryoport/internal/xdg"
 	"github.com/ryoku-dev/ryoport/ui/env"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/kit"
+	"github.com/ryoku-dev/ryoport/ui/pages/common"
 )
 
 // Instant is the draft for a provisioned cloud-image machine.
 type Instant struct {
-	list           kit.List
+	pane           common.Pane
+	header         common.Header
 	image          kit.Picker
 	name           kit.TextField
 	packages       kit.TextField
@@ -27,6 +30,7 @@ type Instant struct {
 	cancel         kit.Button
 	imageOS        string
 	initialized    bool
+	focusFirst     bool
 	submitted      bool
 	nameValidation fieldValidation
 }
@@ -47,12 +51,24 @@ func nameError(name string) string {
 
 func (p *Instant) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	p.initialize(e)
-	if p.cancel.Clicked(gtx) {
-		p.submitted = false
-		p.nameValidation.reset()
-		e.Nav.CloseDraft()
+	submitted := consumeDraftSubmit(gtx, &p.name, &p.packages)
+	image, _ := p.selectedImage(e.Snap.Catalog.Cloud)
+	header := func(gtx layout.Context) layout.Dimensions {
+		return p.header.Layout(gtx, e, common.HeaderContent{
+			Tone:    model.ToneIdle,
+			Mark:    draftMark(e, image.OS, image.Name, icons.Cloud),
+			Name:    "Instant cloud machine",
+			Outline: -1,
+			Proof:   []common.Span{{Text: "Make a provisioned machine from a ready cloud image."}},
+			Acts: func(gtx layout.Context) layout.Dimensions {
+				return p.actions(gtx, e, submitted)
+			},
+		})
 	}
-	return pageLayout(gtx, e, &p.list, "Instant cloud machine", draftColumn(p.body(e)))
+	body := func(gtx layout.Context) layout.Dimensions {
+		return common.DraftColumns(gtx, e.Th, p.body(e), p.aside(e))
+	}
+	return p.pane.Layout(gtx, e, header, nil, 0, body)
 }
 
 func (p *Instant) initialize(e *env.Env) {
@@ -68,6 +84,7 @@ func (p *Instant) initialize(e *env.Env) {
 		toggle.Value = slices.Contains(e.Snap.Settings.Defaults.Tools, tool.ID)
 		p.tools[tool.ID] = toggle
 	}
+	p.focusFirst = true
 }
 
 func (p *Instant) body(e *env.Env) layout.Widget {
@@ -86,6 +103,10 @@ func (p *Instant) body(e *env.Env) layout.Widget {
 		}
 		imagePicker := func(gtx layout.Context) layout.Dimensions {
 			dims := p.image.Layout(gtx, e.Th, "Cloud image", images, selected)
+			if p.focusFirst {
+				p.image.Focus(gtx)
+				p.focusFirst = false
+			}
 			if index, changed := p.image.Changed(gtx); changed && index >= 0 && index < len(e.Snap.Catalog.Cloud) {
 				oldDefault := p.imageOS + "-instant"
 				p.imageOS = e.Snap.Catalog.Cloud[index].OS
@@ -130,29 +151,6 @@ func (p *Instant) body(e *env.Env) layout.Widget {
 				}),
 			)
 		}
-		if p.make.Clicked(gtx) {
-			p.submitted = true
-			if nameError(p.name.Text()) == "" && p.imageOS != "" {
-				name := p.name.Text()
-				e.Ops.Instant(build.InstantOptions{
-					OS: p.imageOS, Name: name, Disposable: p.disposable.Value, Sealed: p.sealed.Value,
-					Tools: p.selectedTools(e.Snap.Catalog.ToolSets), Pkgs: strings.Fields(p.packages.Text()),
-				})
-				p.submitted = false
-				p.nameValidation.reset()
-				e.Nav.Select(model.NewID(model.KindMachine, name))
-			}
-		}
-		actions := func(gtx layout.Context) layout.Dimensions {
-			return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return p.make.Layout(gtx, e.Th, kit.Gold, icons.PlayArrow, "Make it")
-				}),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return p.cancel.Layout(gtx, e.Th, kit.Line, nil, "Cancel")
-				}),
-			)
-		}
 		return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
 			layout.Rigid(fullWidth(imagePicker)),
 			layout.Rigid(nameField),
@@ -161,10 +159,96 @@ func (p *Instant) body(e *env.Env) layout.Widget {
 			layout.Rigid(toolGrid),
 			layout.Rigid(packageField),
 			layout.Rigid(choices),
-			space(e.Th.Sp.S2),
-			layout.Rigid(actions),
 		)
 	}
+}
+
+func (p *Instant) actions(gtx layout.Context, e *env.Env, submitted bool) layout.Dimensions {
+	if p.make.Clicked(gtx) || submitted {
+		p.submitted = true
+		if nameError(p.name.Text()) == "" && p.imageOS != "" {
+			name := p.name.Text()
+			e.Ops.Instant(build.InstantOptions{
+				OS: p.imageOS, Name: name, Disposable: p.disposable.Value, Sealed: p.sealed.Value,
+				Tools: p.selectedTools(e.Snap.Catalog.ToolSets), Pkgs: strings.Fields(p.packages.Text()),
+			})
+			p.submitted = false
+			p.nameValidation.reset()
+			p.initialized = false
+			e.Nav.Select(model.NewID(model.KindMachine, name))
+		}
+	}
+	if p.cancel.Clicked(gtx) {
+		p.submitted = false
+		p.nameValidation.reset()
+		p.initialized = false
+		e.Nav.CloseDraft()
+	}
+	return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if p.imageOS == "" {
+				gtx = gtx.Disabled()
+			}
+			return p.make.Layout(gtx, e.Th, kit.Gold, icons.PlayArrow, "Make it")
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return p.cancel.Layout(gtx, e.Th, kit.Quiet, icons.Close, "Cancel")
+		}),
+	)
+}
+
+func (p *Instant) aside(e *env.Env) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		image, _ := p.selectedImage(e.Snap.Catalog.Cloud)
+		imageName := image.Name
+		if imageName == "" {
+			imageName = "None"
+		}
+		tools := strings.Join(p.selectedToolLabels(e.Snap.Catalog.ToolSets), ", ")
+		if tools == "" {
+			tools = "None"
+		}
+		packages := strings.Join(strings.Fields(p.packages.Text()), ", ")
+		if packages == "" {
+			packages = "None"
+		}
+		defaults := e.Snap.Settings.Defaults
+		rows := []layout.Widget{
+			common.AsideFact(e.Th, "Image", imageName),
+			common.AsideFact(e.Th, "Size", machineSize(defaults.Cores, defaults.RAMGB, defaults.DiskGB)),
+			common.AsideFact(e.Th, "SSH user", "ryoku"),
+			common.AsideFact(e.Th, "SSH key", xdg.BurnKey()),
+			common.AsideFact(e.Th, "Tools", tools),
+			common.AsideFact(e.Th, "Extra packages", packages),
+			common.AsideFact(e.Th, "Folder", machineFolder(p.name.Text())),
+		}
+		if p.disposable.Value {
+			rows = append(rows, common.AsideNote(e.Th, "Disposable deletes the machine when it stops."))
+		}
+		if p.sealed.Value {
+			rows = append(rows, common.AsideNote(e.Th, "Sealed lets you roll the machine back to its saved snapshot."))
+		}
+		return common.Aside(gtx, e.Th, "What you will get", rows...)
+	}
+}
+
+func (p *Instant) selectedImage(catalog []build.CloudImage) (build.CloudImage, bool) {
+	for _, image := range catalog {
+		if image.OS == p.imageOS {
+			return image, true
+		}
+	}
+	return build.CloudImage{}, false
+}
+
+func (p *Instant) selectedToolLabels(catalog []build.ToolSet) []string {
+	selected := make([]string, 0, len(catalog))
+	for _, tool := range catalog {
+		if toggle := p.tools[tool.ID]; toggle != nil && toggle.Value {
+			selected = append(selected, tool.Label)
+		}
+	}
+	return selected
 }
 
 func (p *Instant) selectedTools(catalog []build.ToolSet) []string {

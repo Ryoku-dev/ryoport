@@ -23,6 +23,16 @@ func TestPassthroughProof(t *testing.T) {
 	}
 }
 
+func TestPassthroughGPUFactUsesReadiness(t *testing.T) {
+	if got := passthroughGPUFact(backend.Readiness{Ready: true}); got != "Ready" {
+		t.Fatalf("ready GPU fact = %q", got)
+	}
+	const blocker = "IOMMU is disabled in firmware."
+	if got := passthroughGPUFact(backend.Readiness{Blocker: blocker}); got != blocker {
+		t.Fatalf("blocked GPU fact = %q, want %q", got, blocker)
+	}
+}
+
 func TestValidatePassthroughDraftAcceptsBackendLimits(t *testing.T) {
 	for _, options := range []backend.CreateOptions{
 		{Name: "guest_1", ISO: filepath.Join(string(filepath.Separator), "images", "guest.iso"), OS: "linux", DiskGB: 16, RAMMB: 2 * 1024},

@@ -62,13 +62,17 @@ func TestValidConsole(t *testing.T) {
 
 func TestRDPArgvKeepsPasswordOutOfArgv(t *testing.T) {
 	profile := Profile{Kind: "rdp", Name: "w", Address: "desk.example", Port: 3390, User: "alice", Domain: "HQ"}
-	argv := rdpArgv("xfreerdp3", profile)
+	argv := CommandArgv("xfreerdp3", profile)
 	joined := strings.Join(argv, " ")
 	if !strings.Contains(joined, "/v:desk.example:3390") || !strings.Contains(joined, "/u:alice") || !strings.Contains(joined, "/d:HQ") || !strings.Contains(joined, "/cert:tofu") {
 		t.Fatalf("argv incomplete: %q", joined)
 	}
 	if strings.Contains(joined, "hunter2") || strings.Contains(joined, "/p:") {
 		t.Fatalf("ordinary argv carries a secret: %q", joined)
+	}
+	profile.Auth = "password"
+	if got := strings.Join(CommandArgv("xfreerdp3", profile), " "); got != "xfreerdp3 /args-from:fd:3" {
+		t.Fatalf("password RDP argv = %q", got)
 	}
 	file := rdpArgsFile(profile, "hunter2")
 	if !strings.Contains(file, "/p:hunter2") {
@@ -83,7 +87,7 @@ func TestRDPArgvKeepsPasswordOutOfArgv(t *testing.T) {
 }
 
 func TestSerialArgvUsesRealPicocomFlags(t *testing.T) {
-	argv := serialArgv("picocom", Profile{Kind: "serial", Name: "s", Device: "/dev/ttyUSB0", Baud: 115200})
+	argv := CommandArgv("picocom", Profile{Kind: "serial", Name: "s", Device: "/dev/ttyUSB0", Baud: 115200})
 	want := []string{"picocom", "--baud", "115200", "--flow", "n", "/dev/ttyUSB0"}
 	if strings.Join(argv, " ") != strings.Join(want, " ") {
 		t.Fatalf("serial argv = %v, want %v", argv, want)
@@ -96,7 +100,7 @@ func TestSerialArgvUsesRealPicocomFlags(t *testing.T) {
 }
 
 func TestVNCArgvTargetsExplicitPort(t *testing.T) {
-	argv := vncArgv("vncviewer", Profile{Kind: "vnc", Name: "v", Address: "10.0.0.5", Port: 5901, Fullscreen: true})
+	argv := CommandArgv("vncviewer", Profile{Kind: "vnc", Name: "v", Address: "10.0.0.5", Port: 5901, Fullscreen: true})
 	want := []string{"vncviewer", "10.0.0.5::5901", "-FullScreen"}
 	if strings.Join(argv, " ") != strings.Join(want, " ") {
 		t.Fatalf("VNC argv = %v, want %v", argv, want)
@@ -104,7 +108,7 @@ func TestVNCArgvTargetsExplicitPort(t *testing.T) {
 }
 
 func TestTelnetArgv(t *testing.T) {
-	argv := telnetArgv("telnet", Profile{Kind: "telnet", Name: "r", Address: "router.home", Port: 23})
+	argv := CommandArgv("telnet", Profile{Kind: "telnet", Name: "r", Address: "router.home", Port: 23})
 	if strings.Join(argv, " ") != "telnet router.home 23" {
 		t.Fatalf("telnet argv = %v", argv)
 	}

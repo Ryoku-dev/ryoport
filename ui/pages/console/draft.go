@@ -44,6 +44,7 @@ type Draft struct {
 	focusFirst   bool
 	kind         string
 	profileID    string
+	auth         string
 
 	validation struct {
 		name    consoleFieldValidation
@@ -74,18 +75,7 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	}
 	d.load(e)
 	submitted := consumeConsoleSubmit(gtx, &d.name, &d.device, &d.baud, &d.address, &d.port, &d.user, &d.domain)
-	profile, errs := parseConsoleDraft(
-		d.profileID,
-		d.kind,
-		d.name.Text(),
-		d.device.Text(),
-		d.baud.Text(),
-		d.address.Text(),
-		d.port.Text(),
-		d.user.Text(),
-		d.domain.Text(),
-		d.full.Value,
-	)
+	profile, errs := d.profile()
 	d.observeValidation(gtx)
 	visibleErrs := consoleDraftErrors{
 		Kind:    errs.Kind,
@@ -117,8 +107,22 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			},
 		})
 	}
-	body := func(gtx layout.Context) layout.Dimensions {
+	form := func(gtx layout.Context) layout.Dimensions {
 		return d.form(gtx, e, visibleErrs)
+	}
+	aside := func(gtx layout.Context) layout.Dimensions {
+		previewProfile, _ := d.profile()
+		rows := []layout.Widget{
+			common.AsidePreview(e.Th, consoleDraftPreview(previewProfile)),
+			common.AsideNote(e.Th, consoleReachabilityNote(previewProfile.Kind)),
+		}
+		if previewProfile.Auth == "password" && (previewProfile.Kind == "rdp" || previewProfile.Kind == "vnc") {
+			rows = append(rows, common.AsideNote(e.Th, "The password stays in the system keyring and is never added to this command line."))
+		}
+		return common.Aside(gtx, e.Th, "How Ryoport connects", rows...)
+	}
+	body := func(gtx layout.Context) layout.Dimensions {
+		return common.DraftColumns(gtx, e.Th, form, aside)
 	}
 	return d.pane.Layout(gtx, e, header, nil, 0, body)
 }
@@ -132,6 +136,7 @@ func (d *Draft) load(e *env.Env) {
 	d.loadedTarget = target
 	d.profileID = ""
 	d.kind = "serial"
+	d.auth = ""
 	d.name.SetText("")
 	d.device.SetText("")
 	d.baud.SetText("115200")
@@ -148,6 +153,7 @@ func (d *Draft) load(e *env.Env) {
 			d.profileID = profile.ID
 			d.kind = profile.Kind
 			d.name.SetText(profile.Name)
+			d.auth = profile.Auth
 			d.device.SetText(profile.Device)
 			d.baud.SetText(strconv.Itoa(profile.Baud))
 			d.address.SetText(profile.Address)
@@ -165,6 +171,23 @@ func (d *Draft) load(e *env.Env) {
 	d.validation.user.reset(d.user.Text())
 	d.validation.domain.reset(d.domain.Text())
 	d.focusFirst = true
+}
+
+func (d *Draft) profile() (backend.Profile, consoleDraftErrors) {
+	profile, errs := parseConsoleDraft(
+		d.profileID,
+		d.kind,
+		d.name.Text(),
+		d.device.Text(),
+		d.baud.Text(),
+		d.address.Text(),
+		d.port.Text(),
+		d.user.Text(),
+		d.domain.Text(),
+		d.full.Value,
+	)
+	profile.Auth = d.auth
+	return profile, errs
 }
 
 func (d *Draft) actions(gtx layout.Context, e *env.Env, profile backend.Profile, errs consoleDraftErrors, submitted bool) layout.Dimensions {
@@ -216,7 +239,7 @@ func (d *Draft) form(gtx layout.Context, e *env.Env, errs consoleDraftErrors) la
 		}
 	}
 	selected := kindIndex(d.kind)
-	return consoleFormColumn(gtx, func(gtx layout.Context) layout.Dimensions {
+	return func(gtx layout.Context) layout.Dimensions {
 		children := []layout.FlexChild{
 			layout.Rigid(common.SectionTitle(e.Th, "Connection", nil)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -320,13 +343,7 @@ func (d *Draft) form(gtx layout.Context, e *env.Env, errs consoleDraftErrors) la
 			)
 		}
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
-	})
-}
-
-func consoleFormColumn(gtx layout.Context, widget layout.Widget) layout.Dimensions {
-	gtx.Constraints.Min.X = 0
-	gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(640)))
-	return widget(gtx)
+	}(gtx)
 }
 
 func consoleFieldPair(gtx layout.Context, e *env.Env, first, second layout.Widget) layout.Dimensions {
@@ -340,6 +357,40 @@ func consoleFieldPair(gtx layout.Context, e *env.Env, first, second layout.Widge
 		layout.Flexed(1, first),
 		layout.Flexed(1, second),
 	)
+}
+
+func consoleDraftPreview(profile backend.Profile) string {
+	binary := ""
+	switch profile.Kind {
+	case "serial":
+		binary = "picocom"
+	case "telnet":
+		binary = "telnet"
+	case "rdp":
+		binary = "xfreerdp3"
+	case "vnc":
+		binary = "vncviewer"
+	}
+	argv := backend.CommandArgv(binary, profile)
+	var line strings.Builder
+	for i, arg := range argv {
+		if i > 0 {
+			line.WriteByte(' ')
+		}
+		if arg == "" || strings.ContainsAny(arg, " \t\r\n\"'\\$`;&|()<>*?![]{}") {
+			line.WriteString(strconv.Quote(arg))
+		} else {
+			line.WriteString(arg)
+		}
+	}
+	return line.String()
+}
+
+func consoleReachabilityNote(kind string) string {
+	if kind == "serial" {
+		return "The fleet checks that this device exists and can be read and written."
+	}
+	return "The fleet checks whether it can open a TCP connection to this address and port."
 }
 
 func layoutConsoleField(gtx layout.Context, state *consoleFieldValidation, field *kit.TextField, errText string, widget func(string) layout.Dimensions) layout.Dimensions {

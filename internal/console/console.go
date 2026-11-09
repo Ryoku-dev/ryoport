@@ -137,10 +137,8 @@ func (m *Manager) Open(id string) error {
 		return err
 	}
 	switch profile.Kind {
-	case "serial":
-		return launch.Terminal(serialArgv(binary, profile), windowClass, profile.Kind+": "+profile.Name)
-	case "telnet":
-		return launch.Terminal(telnetArgv(binary, profile), windowClass, profile.Kind+": "+profile.Name)
+	case "serial", "telnet":
+		return launch.Terminal(CommandArgv(binary, profile), windowClass, profile.Kind+": "+profile.Name)
 	case "rdp":
 		if profile.Auth == "password" {
 			if password, err := keyring.Lookup(map[string]string{secretAttribute: profile.ID}); err == nil && password != "" {
@@ -152,7 +150,7 @@ func (m *Manager) Open(id string) error {
 					_, _ = writer.Write([]byte(rdpArgsFile(profile, password)))
 					_ = writer.Close()
 				}()
-				err = launch.Detached([]string{binary, "/args-from:fd:3"}, nil, []*os.File{reader})
+				err = launch.Detached(CommandArgv(binary, profile), nil, []*os.File{reader})
 				_ = reader.Close()
 				if err != nil {
 					_ = writer.Close()
@@ -160,7 +158,7 @@ func (m *Manager) Open(id string) error {
 				return err
 			}
 		}
-		return launch.Detached(rdpArgv(binary, profile), nil, nil)
+		return launch.Detached(CommandArgv(binary, profile), nil, nil)
 	case "vnc":
 		env := []string(nil)
 		if profile.Auth == "password" {
@@ -171,7 +169,7 @@ func (m *Manager) Open(id string) error {
 				}
 			}
 		}
-		return launch.Detached(vncArgv(binary, profile), env, nil)
+		return launch.Detached(CommandArgv(binary, profile), env, nil)
 	}
 	return errors.New("unknown console kind")
 }
@@ -384,6 +382,26 @@ func findBinary(names ...string) string {
 		}
 	}
 	return ""
+}
+
+// CommandArgv builds the exact non-secret argument vector Open uses. A
+// password-authenticated RDP profile receives its full arguments over fd 3.
+func CommandArgv(binary string, profile Profile) []string {
+	switch profile.Kind {
+	case "serial":
+		return serialArgv(binary, profile)
+	case "telnet":
+		return telnetArgv(binary, profile)
+	case "rdp":
+		if profile.Auth == "password" {
+			return []string{binary, "/args-from:fd:3"}
+		}
+		return rdpArgv(binary, profile)
+	case "vnc":
+		return vncArgv(binary, profile)
+	default:
+		return nil
+	}
 }
 
 func serialArgv(binary string, profile Profile) []string {

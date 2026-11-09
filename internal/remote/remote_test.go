@@ -305,6 +305,10 @@ func TestSaveRemoveManagedInclude(t *testing.T) {
 	setTestHome(t)
 	manager := New()
 	input := HostInput{Alias: "alpha", HostName: "alpha.home", User: "nero", Port: 2222, IdentityFile: "~/.ssh/id_alpha", ProxyJump: "jump", Group: "Lab", Tags: []string{}, Notes: "note", Pinned: true, Watch: []string{"sshd.service"}}
+	wantStanza := "Host alpha\n    HostName alpha.home\n    User nero\n    Port 2222\n    ControlMaster auto\n    ControlPath " + xdg.SSHControlPath() + "\n    ControlPersist 60\n    IdentityFile ~/.ssh/id_alpha\n    ProxyJump jump"
+	if got := strings.Join(HostStanzaLines(input), "\n"); got != wantStanza {
+		t.Fatalf("HostStanzaLines() = %q, want %q", got, wantStanza)
+	}
 	if err := manager.Save(input); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +323,7 @@ func TestSaveRemoveManagedInclude(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantManaged := "# Managed by ryoport. Do not edit; use the ryoport app or `ryossh add`/`ryossh remove`.\n\nHost alpha\n    HostName alpha.home\n    User nero\n    Port 2222\n    ControlMaster auto\n    ControlPath " + xdg.SSHControlPath() + "\n    ControlPersist 60\n    IdentityFile ~/.ssh/id_alpha\n    ProxyJump jump\n\n"
+	wantManaged := "# Managed by ryoport. Do not edit; use the ryoport app or `ryossh add`/`ryossh remove`.\n\n" + wantStanza + "\n\n"
 	if string(managed) != wantManaged {
 		t.Fatalf("managed include:\n%s\nwant:\n%s", managed, wantManaged)
 	}

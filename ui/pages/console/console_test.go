@@ -75,6 +75,19 @@ func TestConsoleConnectBlockerExplainsMissingSerialDevice(t *testing.T) {
 	}
 }
 
+func TestConsoleDraftPreviewFollowsSerialFields(t *testing.T) {
+	profile := backend.Profile{
+		Kind:   "serial",
+		Name:   "Switch",
+		Device: "/dev/ttyACM0",
+		Baud:   57600,
+	}
+	want := "picocom --baud 57600 --flow n /dev/ttyACM0"
+	if got := consoleDraftPreview(profile); got != want {
+		t.Fatalf("consoleDraftPreview() = %q, want %q", got, want)
+	}
+}
+
 func TestParseConsoleDraftAcceptsKindFields(t *testing.T) {
 	tests := []struct {
 		name string

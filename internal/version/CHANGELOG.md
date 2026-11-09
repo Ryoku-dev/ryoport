@@ -10,5 +10,6 @@
 - Keeps jobs, alerts and recent changes together in the activity log.
 - Lets you pin any machine, server or console; pinned ones get their own group and tiles on the Now board.
 - Opens catalogue systems in a dialog with their releases and editions.
+- Shows what a new machine, server or console will make or write while you fill it in, down to the SSH config stanza.
 - Scrolls at the speed of your fingers on a trackpad, also on fractionally scaled screens.
 - Checks, downloads and applies its own updates when the install method supports it.

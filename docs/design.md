@@ -42,8 +42,9 @@ board second, and a place for long flows a distant third.
 Ryoport's look is Lithic, a UI language made for Ryoku: Material 3's working
 structure (an adaptive list and detail, a navigation rail, real controls,
 tonal containers, motion that answers a cause) in cut stone. Its thesis is
-"cut, not molded". The full specification, written for other Ryoku apps to
-adopt, with runnable web, QML and Go examples, is in [lithic/](lithic/).
+"cut, not molded". The full specification, written for every Ryoku app to
+adopt, with the design sheets and runnable web, QML and Go kits, lives in the
+Ryoku repository under `docs/lithic/`.
 
 1. **Cut, not molded.** Corners are cut at 45 degrees or square, never
    rounded. The cut follows scale: 16 dp on panes and dialogs (top corners of
@@ -148,8 +149,13 @@ the work pane: a searchable grid of systems across its full width; choosing a
 system (a click, or Enter in the search) opens it in a 720 dp dialog with its
 releases, editions, the size it will get and Create. Its logo is fetched while
 the tile is hovered, so the dialog opens complete. Everything else is a draft
-in the work pane: one column of at most 640 dp under the header, the advanced
-part folded shut, and no field complaining before it was edited and left.
+in the work pane under the same header as a resource (its mark, the title at
+the big size, one sentence, Make it or Save in gold): the form in a column of
+at most 600 dp and, from 820 dp of width, an aside beside it that shows what
+saving will make or write as you type. A server shows the exact stanza for
+its SSH config, a console the command it runs, a machine its image, size,
+key and folder. Narrower, the aside follows the form. The advanced part stays
+folded shut, and no field complains before it was edited and left.
 
 **Menus and dialogs.** A menu sits 8 dp from its button. A press outside a
 menu or a dialog only closes it; it never also presses what was underneath.

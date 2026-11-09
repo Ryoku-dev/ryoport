@@ -171,8 +171,24 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			},
 		})
 	}
-	body := func(gtx layout.Context) layout.Dimensions {
+	form := func(gtx layout.Context) layout.Dimensions {
 		return d.layoutForm(gtx, e, visibleErrors)
+	}
+	aside := func(gtx layout.Context) layout.Dimensions {
+		rows := []layout.Widget{
+			common.AsidePreview(e.Th, serverDraftPreview(d.hostInput())),
+			common.AsideNote(e.Th, "Ryoport writes this stanza to ~/.ssh/config.d/ryoport. ~/.ssh/config includes it through Include config.d/*."),
+		}
+		if d.authSelected == 1 {
+			rows = append(rows, common.AsideNote(e.Th, "The password stays in the system keyring and is never written to this file."))
+		}
+		if editing {
+			rows = append(rows, common.AsideNote(e.Th, "Saving replaces the current stanza."))
+		}
+		return common.Aside(gtx, e.Th, "Saved to your SSH config", rows...)
+	}
+	body := func(gtx layout.Context) layout.Dimensions {
+		return common.DraftColumns(gtx, e.Th, form, aside)
 	}
 	return d.pane.Layout(gtx, e, header, nil, 0, body)
 }
@@ -263,70 +279,68 @@ func (d *Draft) layoutActions(gtx layout.Context, e *env.Env, errors validationE
 }
 
 func (d *Draft) layoutForm(gtx layout.Context, e *env.Env, errors validationErrors) layout.Dimensions {
-	return draftFormColumn(gtx, func(gtx layout.Context) layout.Dimensions {
-		advancedAction := func(gtx layout.Context) layout.Dimensions {
-			if d.advancedOpen.Clicked(gtx) {
-				d.advanced = !d.advanced
-			}
-			label := "Show"
-			icon := icons.ExpandMore
-			if d.advanced {
-				label = "Hide"
-				icon = icons.ExpandLess
-			}
-			d.advancedOpen.Small = true
-			return d.advancedOpen.Layout(gtx, e.Th, kit.Quiet, icon, label)
+	advancedAction := func(gtx layout.Context) layout.Dimensions {
+		if d.advancedOpen.Clicked(gtx) {
+			d.advanced = !d.advanced
 		}
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(common.SectionTitle(e.Th, "Connection", nil)),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				dims := layoutValidatedField(gtx, &d.validation.alias, &d.alias, errors.Alias, func(errText string) layout.Dimensions {
-					return d.alias.Layout(gtx, e.Th, "Alias", "ally", "The short name used by SSH and Ryoport.", errText)
-				})
-				if d.focusFirst {
-					gtx.Execute(key.FocusCmd{Tag: &d.alias.Editor})
-					d.focusFirst = false
-				}
-				return dims
-			}),
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return layoutValidatedField(gtx, &d.validation.host, &d.host, errors.Host, func(errText string) layout.Dimensions {
-					return d.host.Layout(gtx, e.Th, "Host", "192.168.1.10 or server.example.com", "A host name or address.", errText)
-				})
-			}),
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return draftFieldPair(gtx, e,
-					func(gtx layout.Context) layout.Dimensions {
-						return d.user.Layout(gtx, e.Th, "User", "root", "Leave empty to use your local user.", "")
-					},
-					func(gtx layout.Context) layout.Dimensions {
-						d.port.Mono = true
-						return layoutValidatedField(gtx, &d.validation.port, &d.port, errors.Port, func(errText string) layout.Dimensions {
-							return d.port.Layout(gtx, e.Th, "Port", "22", "SSH usually listens on port 22.", errText)
-						})
-					},
-				)
-			}),
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S5}.Layout),
-			layout.Rigid(common.SectionTitle(e.Th, "Authentication", nil)),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				dims := d.auth.Layout(gtx, e.Th, []string{"Key", "Password"}, nil, d.authSelected)
-				if selected, changed := d.auth.Changed(gtx); changed {
-					d.authSelected = selected
-				}
-				return dims
-			}),
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S5}.Layout),
-			layout.Rigid(common.SectionTitle(e.Th, "Advanced", advancedAction)),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.advancedDisclosure.Layout(gtx, e.Th, d.advanced, func(gtx layout.Context) layout.Dimensions {
-					return d.layoutAdvanced(gtx, e)
-				})
-			}),
-		)
-	})
+		label := "Show"
+		icon := icons.ExpandMore
+		if d.advanced {
+			label = "Hide"
+			icon = icons.ExpandLess
+		}
+		d.advancedOpen.Small = true
+		return d.advancedOpen.Layout(gtx, e.Th, kit.Quiet, icon, label)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(common.SectionTitle(e.Th, "Connection", nil)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			dims := layoutValidatedField(gtx, &d.validation.alias, &d.alias, errors.Alias, func(errText string) layout.Dimensions {
+				return d.alias.Layout(gtx, e.Th, "Alias", "ally", "The short name used by SSH and Ryoport.", errText)
+			})
+			if d.focusFirst {
+				gtx.Execute(key.FocusCmd{Tag: &d.alias.Editor})
+				d.focusFirst = false
+			}
+			return dims
+		}),
+		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layoutValidatedField(gtx, &d.validation.host, &d.host, errors.Host, func(errText string) layout.Dimensions {
+				return d.host.Layout(gtx, e.Th, "Host", "192.168.1.10 or server.example.com", "A host name or address.", errText)
+			})
+		}),
+		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return draftFieldPair(gtx, e,
+				func(gtx layout.Context) layout.Dimensions {
+					return d.user.Layout(gtx, e.Th, "User", "root", "Leave empty to use your local user.", "")
+				},
+				func(gtx layout.Context) layout.Dimensions {
+					d.port.Mono = true
+					return layoutValidatedField(gtx, &d.validation.port, &d.port, errors.Port, func(errText string) layout.Dimensions {
+						return d.port.Layout(gtx, e.Th, "Port", "22", "SSH usually listens on port 22.", errText)
+					})
+				},
+			)
+		}),
+		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S5}.Layout),
+		layout.Rigid(common.SectionTitle(e.Th, "Authentication", nil)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			dims := d.auth.Layout(gtx, e.Th, []string{"Key", "Password"}, nil, d.authSelected)
+			if selected, changed := d.auth.Changed(gtx); changed {
+				d.authSelected = selected
+			}
+			return dims
+		}),
+		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S5}.Layout),
+		layout.Rigid(common.SectionTitle(e.Th, "Advanced", advancedAction)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return d.advancedDisclosure.Layout(gtx, e.Th, d.advanced, func(gtx layout.Context) layout.Dimensions {
+				return d.layoutAdvanced(gtx, e)
+			})
+		}),
+	)
 }
 
 func (d *Draft) layoutAdvanced(gtx layout.Context, e *env.Env) layout.Dimensions {
@@ -374,12 +388,6 @@ func (d *Draft) layoutAdvanced(gtx layout.Context, e *env.Env) layout.Dimensions
 	)
 }
 
-func draftFormColumn(gtx layout.Context, widget layout.Widget) layout.Dimensions {
-	gtx.Constraints.Min.X = 0
-	gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(640)))
-	return widget(gtx)
-}
-
 func draftFieldPair(gtx layout.Context, e *env.Env, first, second layout.Widget) layout.Dimensions {
 	if gtx.Constraints.Max.X < gtx.Dp(unit.Dp(520)) {
 		return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
@@ -424,6 +432,10 @@ func (d *Draft) hostInput() remote.HostInput {
 		input.Pve = &remote.PVE{URL: url, Token: token, Insecure: d.pveInsecure}
 	}
 	return input
+}
+
+func serverDraftPreview(input remote.HostInput) string {
+	return strings.Join(remote.HostStanzaLines(input), "\n")
 }
 
 func validateDraft(input validationInput) validationErrors {

@@ -1,14 +1,20 @@
 package create
 
 import (
+	"fmt"
 	"image"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
 
 	"github.com/ryoku-dev/ryoport/internal/store"
+	"github.com/ryoku-dev/ryoport/internal/xdg"
 	"github.com/ryoku-dev/ryoport/ui/env"
+	"github.com/ryoku-dev/ryoport/ui/format"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/kit"
 )
@@ -141,13 +147,90 @@ func (v *fieldValidation) reset() {
 	*v = fieldValidation{}
 }
 
-func draftColumn(w layout.Widget) layout.Widget {
-	return func(gtx layout.Context) layout.Dimensions {
-		width := min(gtx.Constraints.Max.X, gtx.Dp(640))
-		gtx.Constraints.Min.X = width
-		gtx.Constraints.Max.X = width
-		return w(gtx)
+func consumeDraftSubmit(gtx layout.Context, fields ...*kit.TextField) bool {
+	submitted := false
+	for _, field := range fields {
+		field.Submit = true
+		for {
+			event, ok := field.Update(gtx)
+			if !ok {
+				break
+			}
+			if _, ok := event.(widget.SubmitEvent); ok {
+				submitted = true
+			}
+		}
 	}
+	return submitted
+}
+
+func draftMark(e *env.Env, osSlug, fallbackName string, fallback *widget.Icon) layout.Widget {
+	if e != nil && e.Snap != nil && e.Logos != nil {
+		if path := e.Snap.Catalog.Logos[osSlug]; path != "" {
+			return e.Logos.Widget(path, 44, fallbackName, e.Th.R.Fg)
+		}
+	}
+	return func(gtx layout.Context) layout.Dimensions {
+		if e == nil || fallback == nil {
+			return layout.Dimensions{}
+		}
+		size := gtx.Dp(44)
+		gtx.Constraints = layout.Exact(image.Pt(size, size))
+		return fallback.Layout(gtx, e.Th.R.Fg)
+	}
+}
+
+func machineSize(cores, memoryGB, diskGB int) string {
+	coreWord := "cores"
+	if cores == 1 {
+		coreWord = "core"
+	}
+	return fmt.Sprintf("%d %s, %d GB memory, %d GB disk", cores, coreWord, memoryGB, diskGB)
+}
+
+func machineFolder(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return xdg.VMRoot()
+	}
+	return filepath.Join(xdg.VMRoot(), name)
+}
+
+type filePreview struct {
+	path string
+	name string
+	size string
+}
+
+func (f *filePreview) refresh(e *env.Env, path string) {
+	path = strings.TrimSpace(path)
+	if path == f.path {
+		return
+	}
+	f.path = path
+	f.name = ""
+	f.size = ""
+	if path == "" {
+		return
+	}
+	f.name = filepath.Base(path)
+	f.size = "Checking"
+	if e == nil || e.Post == nil {
+		f.size = "Unavailable"
+		return
+	}
+	post := e.Post
+	go func() {
+		size := "Unavailable"
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			size = format.Bytes(info.Size())
+		}
+		post(func() {
+			if f.path == path {
+				f.size = size
+			}
+		})
+	}()
 }
 
 func fullWidth(w layout.Widget) layout.Widget {

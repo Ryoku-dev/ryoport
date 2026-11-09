@@ -109,11 +109,20 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			},
 		})
 	}
-	body := func(gtx layout.Context) layout.Dimensions {
+	form := func(gtx layout.Context) layout.Dimensions {
 		if !e.Snap.GPU.Ready {
 			return d.blocker(gtx, e)
 		}
 		return d.form(gtx, e, visibleErrs)
+	}
+	aside := func(gtx layout.Context) layout.Dimensions {
+		return common.Aside(gtx, e.Th, "Before it starts",
+			common.AsideFact(e.Th, "GPU passthrough", passthroughGPUFact(e.Snap.GPU)),
+			common.AsideNote(e.Th, "Ryoku Hub creates and owns this passthrough machine."),
+		)
+	}
+	body := func(gtx layout.Context) layout.Dimensions {
+		return common.DraftColumns(gtx, e.Th, form, aside)
 	}
 	return d.pane.Layout(gtx, e, header, nil, 0, body)
 }
@@ -182,7 +191,7 @@ func (d *Draft) form(gtx layout.Context, e *env.Env, errs passthroughDraftErrors
 	if d.os == "linux" {
 		selectedOS = 1
 	}
-	return passthroughFormColumn(gtx, func(gtx layout.Context) layout.Dimensions {
+	return func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(common.SectionTitle(e.Th, "Install media", nil)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -230,13 +239,7 @@ func (d *Draft) form(gtx layout.Context, e *env.Env, errs passthroughDraftErrors
 				)
 			}),
 		)
-	})
-}
-
-func passthroughFormColumn(gtx layout.Context, widget layout.Widget) layout.Dimensions {
-	gtx.Constraints.Min.X = 0
-	gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(640)))
-	return widget(gtx)
+	}(gtx)
 }
 
 func passthroughFieldPair(gtx layout.Context, e *env.Env, first, second layout.Widget) layout.Dimensions {
@@ -250,6 +253,16 @@ func passthroughFieldPair(gtx layout.Context, e *env.Env, first, second layout.W
 		layout.Flexed(1, first),
 		layout.Flexed(1, second),
 	)
+}
+
+func passthroughGPUFact(readiness backend.Readiness) string {
+	if readiness.Ready {
+		return "Ready"
+	}
+	if blocker := strings.TrimSpace(readiness.Blocker); blocker != "" {
+		return blocker
+	}
+	return "Finish GPU passthrough setup in Ryoku Hub."
 }
 
 func layoutPassthroughField(gtx layout.Context, state *passthroughFieldValidation, field *kit.TextField, errText string, widget func(string) layout.Dimensions) layout.Dimensions {

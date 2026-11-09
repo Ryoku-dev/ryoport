@@ -778,7 +778,7 @@ func (m *Manager) Save(input HostInput) error {
 		return err
 	}
 	header, blocks := loadInclude(xdg.SSHManaged())
-	block := includeBlock{alias: input.Alias, lines: stanzaLines(input)}
+	block := includeBlock{alias: input.Alias, lines: HostStanzaLines(input)}
 	replaced := false
 	for i := range blocks {
 		if blocks[i].alias == input.Alias {
@@ -1449,7 +1449,8 @@ func ensureIncludeLine() error {
 	return atomicWrite(xdg.SSHConfig(), append([]byte("Include config.d/*\n"), data...), 0o600)
 }
 
-func stanzaLines(host HostInput) []string {
+// HostStanzaLines returns the exact SSH config stanza written for a host.
+func HostStanzaLines(host HostInput) []string {
 	lines := []string{"Host " + host.Alias, "    HostName " + host.HostName}
 	if host.User != "" {
 		lines = append(lines, "    User "+host.User)
@@ -1469,6 +1470,9 @@ func stanzaLines(host HostInput) []string {
 	}
 	if host.ProxyJump != "" {
 		lines = append(lines, "    ProxyJump "+host.ProxyJump)
+	}
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " \t")
 	}
 	return lines
 }
