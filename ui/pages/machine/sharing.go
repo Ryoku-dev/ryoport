@@ -176,7 +176,11 @@ func (v *View) layoutOverviewSharing(gtx layout.Context, e *env.Env, resource mo
 		layout.Rigid(common.SectionTitle(e.Th, "USB", nil)),
 	}
 	if len(machine.USB) == 0 {
-		children = append(children, layout.Rigid(kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, "No USB devices are available.")))
+		message := "No USB devices are available."
+		if editable {
+			message = "No USB devices are set for the next start. USB devices attach when the machine starts."
+		}
+		children = append(children, layout.Rigid(kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, message)))
 	} else {
 		for _, device := range machine.USB {
 			device := device
@@ -189,6 +193,9 @@ func (v *View) layoutOverviewSharing(gtx layout.Context, e *env.Env, resource mo
 		layout.Rigid(layout.Spacer{Height: 21}.Layout),
 		layout.Rigid(common.SectionTitle(e.Th, "Port forwards", add)),
 	)
+	if !editable {
+		children = append(children, layout.Rigid(kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, "Stop the machine to change these. Changes apply on the next start.")))
+	}
 	for i, forward := range machine.Forwards {
 		i, forward := i, forward
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {

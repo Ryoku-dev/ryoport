@@ -16,13 +16,14 @@ type View struct {
 	header common.Header
 	pane   common.Pane
 
-	acts       actState
-	hardware   hardwareState
-	snapshots  snapshotState
-	sharing    sharingState
-	net        networkState
-	install    kit.Button
-	machineKey string
+	acts              actState
+	hardware          hardwareState
+	snapshots         snapshotState
+	sharing           sharingState
+	net               networkState
+	install           kit.Button
+	overviewSnapshots kit.Button
+	machineKey        string
 }
 
 func New() *View { return &View{} }

@@ -14,6 +14,7 @@ import (
 	"github.com/ryoku-dev/ryoport/internal/store"
 	"github.com/ryoku-dev/ryoport/ui/env"
 	"github.com/ryoku-dev/ryoport/ui/format"
+	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/kit"
 	"github.com/ryoku-dev/ryoport/ui/pages/common"
 )
@@ -201,22 +202,13 @@ func (v *View) layoutOverview(gtx layout.Context, e *env.Env, resource model.Res
 	}
 
 	v.net.update(machine, e.Snap.At)
-	left := func(gtx layout.Context) layout.Dimensions {
-		return v.layoutReadings(gtx, e, resource, machine)
-	}
-	right := func(gtx layout.Context) layout.Dimensions {
-		return v.layoutOverviewSharing(gtx, e, resource, machine)
-	}
-	if gtx.Constraints.Max.X < gtx.Dp(660) {
-		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(left),
-			layout.Rigid(layout.Spacer{Height: 21}.Layout),
-			layout.Rigid(right),
-		)
-	}
-	return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(34)}.Layout(gtx,
-		layout.Flexed(1.1, left),
-		layout.Flexed(.9, right),
+	return layoutOverviewColumns(gtx,
+		func(gtx layout.Context) layout.Dimensions {
+			return v.layoutReadings(gtx, e, resource, machine)
+		},
+		func(gtx layout.Context) layout.Dimensions {
+			return v.layoutOverviewSharing(gtx, e, resource, machine)
+		},
 	)
 }
 
@@ -247,12 +239,116 @@ func (v *View) layoutReadings(gtx layout.Context, e *env.Env, resource model.Res
 	)
 }
 
-func (v *View) layoutStoppedOverview(gtx layout.Context, e *env.Env, resource model.Resource, _ *store.Machine) layout.Dimensions {
-	copy := "Not running, so it holds no memory and draws no power."
-	if at, ok := transitionAt(e.Snap.Events, resource.ID, "Stopped "+resource.Name); ok {
-		copy = "Last used " + format.Ago(at, e.Now) + ". Not running, so it holds no memory and draws no power."
+func (v *View) layoutStoppedOverview(gtx layout.Context, e *env.Env, resource model.Resource, machine *store.Machine) layout.Dimensions {
+	v.overviewSnapshots.Small = true
+	if v.overviewSnapshots.Clicked(gtx) {
+		e.Nav.SetTab(model.KindMachine, "Snapshots")
 	}
-	return kit.Text(e.Th, e.Th.T.Body, e.Th.R.Fg3, copy)(gtx)
+	startDisplay := displayName(string(store.StartDisplay(e.Snap)))
+	configuredDisplay := displayName(e.Snap.Settings.Defaults.Display)
+	intro := "Start opens this machine in a window."
+	switch startDisplay {
+	case "SPICE":
+		intro = "Start opens this machine with SPICE."
+	case "Headless":
+		intro = "Start runs this machine without a display."
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(kit.Text(e.Th, e.Th.T.Body, e.Th.R.Fg3, intro)),
+		layout.Rigid(layout.Spacer{Height: 21}.Layout),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return layoutOverviewColumns(gtx,
+				func(gtx layout.Context) layout.Dimensions {
+					return v.layoutStoppedReadings(gtx, e, resource, machine, configuredDisplay, startDisplay)
+				},
+				func(gtx layout.Context) layout.Dimensions {
+					return v.layoutOverviewSharing(gtx, e, resource, machine)
+				},
+			)
+		}),
+	)
+}
+
+func layoutOverviewColumns(gtx layout.Context, left, right layout.Widget) layout.Dimensions {
+	if gtx.Constraints.Max.X < gtx.Dp(660) {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(left),
+			layout.Rigid(layout.Spacer{Height: 21}.Layout),
+			layout.Rigid(right),
+		)
+	}
+	return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(34)}.Layout(gtx,
+		layout.Flexed(1.1, left),
+		layout.Flexed(.9, right),
+	)
+}
+
+func (v *View) layoutStoppedReadings(gtx layout.Context, e *env.Env, resource model.Resource, machine *store.Machine, display, startDisplay string) layout.Dimensions {
+	diskReading, diskDetail := stoppedDiskFact(machine)
+	snapshots := userSnapshots(machine.Snapshots)
+	snapshotReading := fmt.Sprintf("%d %s", len(snapshots), plural(len(snapshots), "snapshot", "snapshots"))
+	snapshotDetail := "No snapshots yet."
+	if len(snapshots) > 0 {
+		snapshotDetail = "Newest: " + snapshots[0].Name
+		if at, err := time.Parse(time.RFC3339, snapshots[0].Date); err == nil {
+			snapshotDetail += ", " + format.Ago(at, e.Now)
+		}
+		snapshotDetail += "."
+	}
+	bootDetail := "Boots from its virtual disk."
+	if !machine.Installed {
+		bootDetail = "Uses its configured install media before the virtual disk is created."
+	}
+	if display != startDisplay {
+		bootDetail = display + " is configured, but this host will use a window. " + bootDetail
+	}
+	snapshotBody := func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(8)}.Layout(gtx,
+			layout.Rigid(kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, snapshotDetail)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return v.overviewSnapshots.Layout(gtx, e.Th, kit.Quiet, icons.Backup, "Open snapshots")
+			}),
+		)
+	}
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(section(e, "Last run", lastRunReading(e.Snap.Events, resource, e.Now), false, kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, "It is not using memory or processor time now."))),
+		layout.Rigid(section(e, "Disk", diskReading, false, kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, diskDetail))),
+		layout.Rigid(section(e, "Snapshots", snapshotReading, false, snapshotBody)),
+		layout.Rigid(section(e, "Starts with", display, false, kit.Text(e.Th, e.Th.T.Caption, e.Th.R.Fg3, bootDetail))),
+	)
+}
+
+func lastRunReading(events []model.Event, resource model.Resource, now time.Time) string {
+	var latest time.Time
+	started := "Started " + resource.Name
+	stopped := "Stopped " + resource.Name
+	for _, event := range events {
+		if event.Target != resource.ID || (event.Text != started && event.Text != stopped) {
+			continue
+		}
+		if latest.IsZero() || event.At.After(latest) {
+			latest = event.At
+		}
+	}
+	if latest.IsZero() {
+		return "Never started"
+	}
+	return format.Ago(latest, now)
+}
+
+func stoppedDiskFact(machine *store.Machine) (string, string) {
+	capacity := displaySize(machine.Disk)
+	if !machine.Installed {
+		if capacity == "" {
+			return "Not created", "No disk image exists on this computer."
+		}
+		return "Not created", capacity + " is configured for the virtual disk."
+	}
+	used := format.Bytes(max(int64(0), machine.DiskUsed))
+	if capacity == "" {
+		return used, "Space used by this machine on the computer."
+	}
+	return used + " of " + capacity, "Machine folder space used on the host against virtual disk capacity."
 }
 
 func section(e *env.Env, title, reading string, prominent bool, body layout.Widget) layout.Widget {

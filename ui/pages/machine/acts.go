@@ -158,7 +158,7 @@ func (a *actState) widgetFor(e *env.Env, resource model.Resource, machine *store
 		}
 	default:
 		return func(gtx layout.Context) layout.Dimensions {
-			items := overflowItems(resource.State, machine)
+			items := overflowItems(resource, machine)
 			return a.morePop.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				return a.more.Layout(gtx, e.Th, kit.Quiet, icons.MoreHoriz, "More actions")
 			}, func(gtx layout.Context) layout.Dimensions {
@@ -171,7 +171,7 @@ func (a *actState) widgetFor(e *env.Env, resource model.Resource, machine *store
 func (a *actState) handleClicks(gtx layout.Context, e *env.Env, resource model.Resource, machine *store.Machine, job model.Job, making bool) {
 	name := resource.Name
 	if e.Snap.Host.Engine.Ready && a.start.Main.Clicked(gtx) {
-		e.Ops.Start(name, vm.DisplayWindow, false)
+		e.Ops.Start(name, store.StartDisplay(e.Snap), false)
 	}
 	if a.start.More.Clicked(gtx) {
 		a.startPop.Open = !a.startPop.Open
@@ -230,7 +230,7 @@ func (a *actState) handleClicks(gtx layout.Context, e *env.Env, resource model.R
 	if a.more.Clicked(gtx) {
 		a.morePop.Open = !a.morePop.Open
 	}
-	items := overflowItems(resource.State, machine)
+	items := overflowItems(resource, machine)
 	if index, ok := a.moreMenu.Clicked(gtx); ok && index >= 0 && index < len(items) {
 		a.morePop.Open = false
 		a.runOverflow(e, resource, machine, items[index].Label)
@@ -240,6 +240,8 @@ func (a *actState) handleClicks(gtx layout.Context, e *env.Env, resource model.R
 func (a *actState) runOverflow(e *env.Env, resource model.Resource, machine *store.Machine, label string) {
 	name := resource.Name
 	switch label {
+	case "Pin", "Unpin":
+		e.Ops.SetPinned(resource.ID, !resource.Pinned)
 	case "Rename":
 		a.rename.SetText(name)
 		a.renameErr = ""
@@ -381,17 +383,23 @@ func validDiskSize(value string) bool {
 	return err == nil && size > 0
 }
 
-func overflowItems(state model.State, machine *store.Machine) []kit.MenuItem {
+func overflowItems(resource model.Resource, machine *store.Machine) []kit.MenuItem {
 	seal := "Seal"
 	sealIcon := icons.Lock
 	if machine != nil && machine.Sealed {
 		seal = "Restore seal"
 		sealIcon = icons.LockOpen
 	}
+	pin := "Pin"
+	if resource.Pinned {
+		pin = "Unpin"
+	}
+	state := resource.State
 	inactive := state == model.StateStopped || state == model.StateAbsent || state == model.StateError || state == model.StateUnknown
 	installed := machine != nil && machine.Installed
 	items := []kit.MenuItem{
 		{Icon: icons.Edit, Label: "Rename", Disabled: machine == nil || !inactive},
+		{Icon: icons.PushPin, Label: pin},
 		{Icon: icons.HardDrive, Label: "Resize disk", Disabled: state != model.StateStopped || !installed},
 		{Icon: icons.ContentCopy, Label: "Make a template", Disabled: state != model.StateStopped || !installed},
 		{Icon: sealIcon, Label: seal, Disabled: state != model.StateStopped || !installed},

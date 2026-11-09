@@ -62,6 +62,25 @@ func TestProofForStoppedMachine(t *testing.T) {
 	}
 }
 
+func TestLastRunReadingUsesLatestTargetTransition(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	resource := model.Resource{
+		ID:   model.NewID(model.KindMachine, "debian"),
+		Name: "debian",
+	}
+	events := []model.Event{
+		{At: now.Add(-2 * time.Hour), Target: resource.ID, Text: "Started debian"},
+		{At: now.Add(-10 * time.Minute), Target: model.NewID(model.KindMachine, "other"), Text: "Stopped other"},
+		{At: now.Add(-45 * time.Minute), Target: resource.ID, Text: "Stopped debian"},
+	}
+	if got, want := lastRunReading(events, resource, now), "45 min ago"; got != want {
+		t.Fatalf("last run = %q, want %q", got, want)
+	}
+	if got, want := lastRunReading(nil, resource, now), "Never started"; got != want {
+		t.Fatalf("unknown last run = %q, want %q", got, want)
+	}
+}
+
 func TestStepStatesFollowJobPhase(t *testing.T) {
 	tests := []struct {
 		name string
