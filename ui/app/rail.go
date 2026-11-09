@@ -16,18 +16,26 @@ import (
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/kit"
 	"github.com/ryoku-dev/ryoport/ui/pages/create"
+	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
+type railItemMotion struct {
+	hover, focus, notch anim.Tween
+}
+
 type railDestination struct {
-	click kit.Click
-	page  store.Page
-	label string
-	icon  *widget.Icon
+	click  kit.Click
+	page   store.Page
+	label  string
+	icon   *widget.Icon
+	motion railItemMotion
 }
 
 type rail struct {
 	home       kit.Click
+	homeMotion railItemMotion
 	newItem    kit.Click
+	newMotion  railItemMotion
 	newPopover kit.Popover
 	newMenu    kit.Menu
 	menuItems  []kit.MenuItem
@@ -138,10 +146,39 @@ func (r *rail) pollNavigation(gtx layout.Context, e *env.Env) {
 	}
 }
 
+func railHover(gtx layout.Context, e *env.Env, tween *anim.Tween, hovered bool) float32 {
+	tween.Ease = anim.EaseChisel
+	if hovered && gtx.Source.Enabled() {
+		tween.Set(gtx, 1)
+		tween.Duration = e.Th.Motion.Hover
+	} else {
+		tween.Set(gtx, 0)
+		tween.Duration = e.Th.Motion.Hover * 5 / 8
+	}
+	return tween.Value(gtx)
+}
+
+func railFocus(gtx layout.Context, e *env.Env, tween *anim.Tween, focused bool) float32 {
+	tween.Ease = anim.EaseChisel
+	if focused {
+		tween.Set(gtx, 1)
+		tween.Duration = e.Th.Motion.Hover * 3 / 4
+	} else {
+		tween.Set(gtx, 0)
+		tween.Duration = e.Th.Motion.Hover * 5 / 8
+	}
+	return tween.Value(gtx)
+}
+
 func (r *rail) layoutHome(gtx layout.Context, e *env.Env, label bool) layout.Dimensions {
-	return r.home.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+	cut := gtx.Dp(e.Th.Cut.Mid)
+	dims := r.home.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
 		semantic.LabelOp("Home").Add(gtx.Ops)
+		hover := railHover(gtx, e, &r.homeMotion.hover, r.home.Hovered())
+		if hover > 0 {
+			kit.FillCut(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, cut, theme.Mix(e.Th.R.Stone1, e.Th.R.Stone3, hover))
+		}
 		return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 			size := unit.Dp(40)
 			if label {
@@ -161,22 +198,35 @@ func (r *rail) layoutHome(gtx layout.Context, e *env.Env, label bool) layout.Dim
 			)
 		})
 	})
+	focus := railFocus(gtx, e, &r.homeMotion.focus, gtx.Focused(&r.home.Clickable))
+	kit.FocusRingAlpha(gtx, e.Th, image.Rectangle{Max: dims.Size}, cut, focus)
+	return dims
 }
 
 func (r *rail) layoutDestination(gtx layout.Context, e *env.Env, destination *railDestination, selected, labels bool) layout.Dimensions {
 	notch := destination.page == store.PageSettings && (e.Snap.Update.Available || e.Snap.Update.RestartPending)
-	return r.layoutItem(gtx, e, &destination.click, destination.icon, destination.label, selected, labels, notch)
+	return r.layoutItem(gtx, e, &destination.click, &destination.motion, destination.icon, destination.label, selected, labels, notch)
 }
 
-func (r *rail) layoutItem(gtx layout.Context, e *env.Env, click *kit.Click, icon *widget.Icon, label string, selected, labels, notch bool) layout.Dimensions {
-	return click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+func (r *rail) layoutItem(gtx layout.Context, e *env.Env, click *kit.Click, motion *railItemMotion, icon *widget.Icon, label string, selected, labels, notch bool) layout.Dimensions {
+	cut := gtx.Dp(e.Th.Cut.Mid)
+	dims := click.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
 		semantic.LabelOp(label).Add(gtx.Ops)
-		if click.Hovered() && !selected {
-			kit.FillCut(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, gtx.Dp(e.Th.Cut.Mid), e.Th.R.Stone3)
+		hover := railHover(gtx, e, &motion.hover, click.Hovered() && !selected)
+		if hover > 0 {
+			kit.FillCut(gtx.Ops, image.Rectangle{Max: gtx.Constraints.Max}, cut, theme.Mix(e.Th.R.Stone1, e.Th.R.Stone3, hover))
 		}
+		motion.notch.Duration = e.Th.Motion.Notch
+		motion.notch.Ease = anim.EaseChisel
 		if notch {
-			kit.Notch(gtx.Ops, image.Point{}, gtx.Dp(e.Th.Cut.Notch), e.Th.R.Amber)
+			motion.notch.Set(gtx, 1)
+		} else {
+			motion.notch.Set(gtx, 0)
+		}
+		notchSize := int(float32(gtx.Dp(e.Th.Cut.Notch))*motion.notch.Value(gtx) + .5)
+		if notchSize > 0 {
+			kit.Notch(gtx.Ops, image.Point{}, notchSize, e.Th.R.Amber)
 		}
 		ink := e.Th.R.Fg2
 		if selected {
@@ -201,6 +251,9 @@ func (r *rail) layoutItem(gtx layout.Context, e *env.Env, click *kit.Click, icon
 			)
 		})
 	})
+	focus := railFocus(gtx, e, &motion.focus, gtx.Focused(&click.Clickable))
+	kit.FocusRingAlpha(gtx, e.Th, image.Rectangle{Max: dims.Size}, cut, focus)
+	return dims
 }
 
 func (r *rail) LayoutNewOverlay(gtx layout.Context, e *env.Env) {
@@ -252,7 +305,7 @@ func (r *rail) layoutNew(gtx layout.Context, e *env.Env, itemSize image.Point, l
 		func(gtx layout.Context) layout.Dimensions {
 			gtx.Constraints = layout.Exact(itemSize)
 			offset := op.Offset(visualOffset).Push(gtx.Ops)
-			dims := r.layoutItem(gtx, e, &r.newItem, icons.Add, "New", false, labels, false)
+			dims := r.layoutItem(gtx, e, &r.newItem, &r.newMotion, icons.Add, "New", false, labels, false)
 			offset.Pop()
 			return dims
 		},

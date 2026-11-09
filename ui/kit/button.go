@@ -48,28 +48,28 @@ func colorsFor(th *theme.Theme, kind ButtonKind) buttonColors {
 	}
 }
 
-func normalInteractiveColors(th *theme.Theme, kind ButtonKind, hovered bool) buttonColors {
+func normalInteractiveColors(th *theme.Theme, kind ButtonKind, hover float32) buttonColors {
 	p := colorsFor(th, kind)
-	if hovered {
+	if hover > 0 {
 		if p.fill.A == 0 {
-			p.fill = theme.WithAlpha(p.ink, 0.10)
+			p.fill = theme.WithAlpha(p.ink, 0.10*min(hover, 1))
 		} else {
-			p.fill = theme.Mix(p.fill, color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}, 0.10)
+			p.fill = theme.Mix(p.fill, color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}, 0.10*min(hover, 1))
 		}
 	}
 	return p
 }
 
-func interactiveColors(gtx layout.Context, th *theme.Theme, kind ButtonKind, hovered bool) buttonColors {
-	p := normalInteractiveColors(th, kind, hovered && gtx.Source.Enabled())
+func interactiveColors(gtx layout.Context, th *theme.Theme, kind ButtonKind, hover float32) buttonColors {
+	p := normalInteractiveColors(th, kind, hover)
 	p.fill = disabledInk(gtx, p.fill)
 	p.ink = disabledInk(gtx, p.ink)
 	p.outline = disabledInk(gtx, p.outline)
 	return p
 }
 
-func drawButtonSurface(gtx layout.Context, th *theme.Theme, r image.Rectangle, cut int, kind ButtonKind, hovered bool) color.NRGBA {
-	p := interactiveColors(gtx, th, kind, hovered)
+func drawButtonSurface(gtx layout.Context, th *theme.Theme, r image.Rectangle, cut int, kind ButtonKind, hover float32) color.NRGBA {
+	p := interactiveColors(gtx, th, kind, hover)
 	FillCut(gtx.Ops, r, cut, p.fill)
 	if p.stroke {
 		StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), p.outline)
@@ -79,9 +79,9 @@ func drawButtonSurface(gtx layout.Context, th *theme.Theme, r image.Rectangle, c
 
 type Button struct {
 	Click
-	Small, Busy bool
-	press       anim.Tween
-	width       int
+	Small, Busy         bool
+	press, hover, focus anim.Tween
+	width               int
 }
 
 func (b *Button) Clicked(gtx layout.Context) bool {
@@ -122,7 +122,8 @@ func (b *Button) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind, ic
 		finalCut = gtx.Dp(baseCut) + int(float32(gtx.Dp(4))*pressed+0.5)
 		sink := int(float32(gtx.Dp(1))*pressed + 0.5)
 
-		palette := normalInteractiveColors(th, kind, b.Hovered() && !b.Busy && original.Source.Enabled())
+		hover := hoverValue(gtx, th, &b.hover, b.Hovered() && !b.Busy && original.Source.Enabled())
+		palette := normalInteractiveColors(th, kind, hover)
 		contentGTX := gtx
 		contentGTX.Constraints.Min = image.Point{}
 		contentGTX.Constraints.Max.Y = h
@@ -171,8 +172,7 @@ func (b *Button) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind, ic
 		}
 		return layout.Dimensions{Size: size, Baseline: content.Baseline + (size.Y-content.Size.Y)/2 + sink}
 	})
-	if original.Focused(&b.Click.Clickable) {
-		FocusRing(original, th, image.Rectangle{Max: dims.Size}, finalCut)
-	}
+	focus := focusValue(original, th, &b.focus, original.Focused(&b.Click.Clickable))
+	FocusRingAlpha(original, th, image.Rectangle{Max: dims.Size}, finalCut, focus)
 	return dims
 }

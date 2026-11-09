@@ -15,18 +15,23 @@ import (
 )
 
 type Tabs struct {
-	tabs     []Click
-	widths   []int
-	x, width anim.Tween
-	changed  int
-	pending  bool
+	tabs         []Click
+	hover, focus []anim.Tween
+	widths       []int
+	x, width     anim.Tween
+	changed      int
+	pending      bool
 }
 
 func (t *Tabs) ensure(n int) {
 	for len(t.tabs) < n {
 		t.tabs = append(t.tabs, Click{})
+		t.hover = append(t.hover, anim.Tween{})
+		t.focus = append(t.focus, anim.Tween{})
 	}
 	t.tabs = t.tabs[:n]
+	t.hover = t.hover[:n]
+	t.focus = t.focus[:n]
 }
 
 func (t *Tabs) poll(gtx layout.Context) {
@@ -132,17 +137,17 @@ func (t *Tabs) Layout(gtx layout.Context, th *theme.Theme, labels []string, sele
 			semantic.Button.Add(gtx.Ops)
 			semantic.LabelOp(label).Add(gtx.Ops)
 			semantic.SelectedOp(i == selected).Add(gtx.Ops)
+			hover := hoverValue(gtx, th, &t.hover[i], t.tabs[i].Hovered() && i != selected)
 			ink := th.R.Fg3
 			if i == selected {
 				ink = th.R.Fg
-			} else if t.tabs[i].Hovered() {
-				ink = th.R.Fg2
+			} else {
+				ink = theme.Mix(th.R.Fg3, th.R.Fg2, hover)
 			}
 			return layout.Center.Layout(gtx, rawText(th, th.T.Label, disabledInk(gtx, ink), label))
 		})
-		if gtx.Focused(&t.tabs[i].Clickable) {
-			FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, 0)
-		}
+		focus := focusValue(gtx, th, &t.focus[i], gtx.Focused(&t.tabs[i].Clickable))
+		FocusRingAlpha(gtx, th, image.Rectangle{Max: dims.Size}, 0, focus)
 		offset.Pop()
 		x += width
 	}

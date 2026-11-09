@@ -10,6 +10,8 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
+
+	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
 // popoverScene draws a window-sized clickable, then a popover anchored at
@@ -83,6 +85,41 @@ func TestPopoverOutsidePressClosesAndStops(t *testing.T) {
 	}
 	if scene.under.Clicked(gtx) {
 		t.Fatal("the press that closed the popover also clicked what was underneath")
+	}
+}
+
+func TestDialogProgrammaticCloseCompletesAfterExit(t *testing.T) {
+	var (
+		dialog Dialog
+		router input.Router
+	)
+	th := theme.New(theme.Signature(true), nil)
+	frame := func(now time.Time) layout.Context {
+		ops := new(op.Ops)
+		gtx := layout.Context{
+			Ops:         ops,
+			Source:      router.Source(),
+			Constraints: layout.Exact(image.Pt(800, 600)),
+			Now:         now,
+		}
+		dialog.Layout(gtx, th, "", func(gtx layout.Context) layout.Dimensions {
+			return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 80)}
+		})
+		router.Frame(ops)
+		return gtx
+	}
+
+	now := time.Unix(100, 0)
+	dialog.Open = true
+	frame(now)
+	dialog.Open = false
+	closing := frame(now.Add(10 * time.Millisecond))
+	if dialog.Closed(closing) {
+		t.Fatal("programmatic close reported before the exit completed")
+	}
+	closed := frame(now.Add(250 * time.Millisecond))
+	if !dialog.Closed(closed) {
+		t.Fatal("programmatic close did not report after the exit completed")
 	}
 }
 

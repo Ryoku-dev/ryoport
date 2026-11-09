@@ -23,7 +23,9 @@ type Popover struct {
 	contentRect image.Rectangle
 	focusTag    int
 	outsideTag  int
+	blockerTag  int
 	wasOpen     bool
+	visible     bool
 	enter       anim.Tween
 }
 
@@ -33,6 +35,8 @@ const popoverGap = 8
 // popoverEnter is how long a popover takes to arrive: the theme's hover
 // time, so a menu answers as quickly as the control that opened it.
 const popoverEnter = 160 * time.Millisecond
+
+const popoverExit = 100 * time.Millisecond
 
 // farAway bounds the outside-press catcher. The catcher has an area of its
 // own so press positions arrive in this popover's coordinates wherever the
@@ -44,8 +48,6 @@ var activePopover *Popover
 
 func (p *Popover) close() {
 	p.Open = false
-	p.wasOpen = false
-	p.contentRect = image.Rectangle{}
 	if activePopover == p {
 		activePopover = nil
 	}
@@ -98,58 +100,91 @@ func clampCoordinate(v, lo, hi int) int {
 
 func (p *Popover) Layout(gtx layout.Context, anchor, content layout.Widget) layout.Dimensions {
 	anchorDims := anchor(gtx)
-	if !p.Open {
-		if activePopover == p {
-			activePopover = nil
-		}
-		p.wasOpen = false
-		p.contentRect = image.Rectangle{}
-		return anchorDims
-	}
+	opening := p.Open && (!p.wasOpen || !p.visible)
+	closing := !p.Open && p.wasOpen
 
-	opening := !p.wasOpen || activePopover != p
-	if activePopover != nil && activePopover != p {
+	if p.Open && activePopover != nil && activePopover != p {
 		activePopover.Open = false
-		activePopover.wasOpen = false
-		activePopover.contentRect = image.Rectangle{}
 	}
-	activePopover = p
-	p.wasOpen = true
+	if p.Open {
+		activePopover = p
+	}
 	if opening {
+		p.visible = true
 		p.enter = anim.Tween{Duration: popoverEnter, Ease: anim.EaseChisel}
 		p.enter.Set(gtx, 0)
 		p.enter.Set(gtx, 1)
 	}
-	event.Op(gtx.Ops, &p.focusTag)
-	if opening || !gtx.Focused(&p.focusTag) {
-		gtx.Execute(key.FocusCmd{Tag: &p.focusTag})
+	if closing {
+		p.enter.Ease = anim.EaseChisel
+		p.enter.Set(gtx, 0)
+		p.enter.Duration = popoverExit
+		if activePopover == p {
+			activePopover = nil
+		}
+	}
+	p.wasOpen = p.Open
+	if !p.visible {
+		p.contentRect = image.Rectangle{}
+		return anchorDims
 	}
 
-	for {
-		e, ok := gtx.Event(pointer.Filter{Target: &p.outsideTag, Kinds: pointer.Press})
-		if !ok {
-			break
+	if p.Open {
+		event.Op(gtx.Ops, &p.focusTag)
+		if opening || !gtx.Focused(&p.focusTag) {
+			gtx.Execute(key.FocusCmd{Tag: &p.focusTag})
 		}
-		press, ok := e.(pointer.Event)
-		if ok && !press.Position.Round().In(p.contentRect) {
-			p.close()
-			return anchorDims
+
+		for {
+			e, ok := gtx.Event(pointer.Filter{Target: &p.outsideTag, Kinds: pointer.Press})
+			if !ok {
+				break
+			}
+			press, ok := e.(pointer.Event)
+			if ok && !press.Position.Round().In(p.contentRect) {
+				p.close()
+				p.wasOpen = false
+				p.enter.Ease = anim.EaseChisel
+				p.enter.Set(gtx, 0)
+				p.enter.Duration = popoverExit
+			}
+		}
+		for {
+			event, ok := gtx.Event(key.Filter{Focus: &p.focusTag, Name: key.NameEscape})
+			if !ok {
+				break
+			}
+			if event, ok := event.(key.Event); ok && event.State == key.Press {
+				p.close()
+				p.wasOpen = false
+				p.enter.Ease = anim.EaseChisel
+				p.enter.Set(gtx, 0)
+				p.enter.Duration = popoverExit
+			}
 		}
 	}
-	for {
-		event, ok := gtx.Event(key.Filter{Focus: &p.focusTag, Name: key.NameEscape})
-		if !ok {
-			break
+
+	if !p.Open {
+		for {
+			_, ok := gtx.Event(pointer.Filter{Target: &p.blockerTag, Kinds: pointer.Press | pointer.Release})
+			if !ok {
+				break
+			}
 		}
-		if event, ok := event.(key.Event); ok && event.State == key.Press {
-			p.close()
-			return anchorDims
-		}
+	}
+
+	progress := p.enter.Value(gtx)
+	if !p.Open && progress <= 0 {
+		p.visible = false
+		p.contentRect = image.Rectangle{}
+		return anchorDims
 	}
 
 	window := gtx.Constraints.Max
-	contentCtx := gtx
-	contentCtx = overlayContentContext(contentCtx)
+	contentCtx := overlayContentContext(gtx)
+	if !p.Open {
+		contentCtx = contentCtx.Disabled()
+	}
 	contentCtx.Constraints.Min = image.Point{}
 	contentCtx.Constraints.Max.X = max(0, window.X)
 	contentCtx.Constraints.Max.Y = max(0, window.Y)
@@ -162,21 +197,29 @@ func (p *Popover) Layout(gtx layout.Context, anchor, content layout.Widget) layo
 	position := placePopover(viewport, anchorRect, contentDims.Size, gtx.Dp(popoverGap))
 	p.contentRect = image.Rectangle{Min: position, Max: position.Add(contentDims.Size)}
 
-	// The content arrives from its anchor: it fades in while closing the
-	// last few dp of the gap.
-	progress := p.enter.Value(gtx)
-	slide := int(float32(gtx.Dp(6)) * (1 - progress))
+	distance := gtx.Dp(6)
+	if !p.Open {
+		distance = gtx.Dp(4)
+	}
+	slide := int(float32(distance) * (1 - progress))
 	if position.Y >= anchorRect.Max.Y {
 		slide = -slide
 	}
 
 	overlay := op.Record(gtx.Ops)
-	catcher := clip.Rect(image.Rect(-farAway, -farAway, farAway, farAway)).Push(gtx.Ops)
-	event.Op(gtx.Ops, &p.outsideTag)
-	catcher.Pop()
+	if p.Open {
+		catcher := clip.Rect(image.Rect(-farAway, -farAway, farAway, farAway)).Push(gtx.Ops)
+		event.Op(gtx.Ops, &p.outsideTag)
+		catcher.Pop()
+	}
 	opacity := paint.PushOpacity(gtx.Ops, progress)
 	offset := op.Offset(position.Add(image.Pt(0, slide))).Push(gtx.Ops)
 	contentCall.Add(gtx.Ops)
+	if !p.Open {
+		blocker := clip.Rect(image.Rect(-farAway, -farAway, farAway, farAway)).Push(gtx.Ops)
+		event.Op(gtx.Ops, &p.blockerTag)
+		blocker.Pop()
+	}
 	offset.Pop()
 	opacity.Pop()
 	op.Defer(gtx.Ops, overlay.Stop())

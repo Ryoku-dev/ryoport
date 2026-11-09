@@ -38,27 +38,29 @@ func (o *overlays) Layout(gtx layout.Context, e *env.Env, shell *shell) {
 }
 
 func (o *overlays) layoutConfirm(gtx layout.Context, e *env.Env) {
-	pending := e.Nav.Confirm
+	requested := e.Nav.Confirm
+	if requested != nil && o.activeConfirm != requested {
+		o.activeConfirm = requested
+		o.confirm.Dialog.Open = true
+	}
+	pending := o.activeConfirm
 	if pending == nil {
-		o.activeConfirm = nil
-		o.confirm.Dialog.Open = false
 		return
 	}
-	if o.activeConfirm != pending {
-		o.activeConfirm = pending
-		o.confirm.Dialog.Open = true
+	if requested == nil {
+		o.confirm.Dialog.Open = false
 	}
 	if o.confirm.Layout(gtx, e.Th, pending.Title, pending.Body, pending.Action, pending.TypeToConfirm) {
 		run := pending.Run
 		e.Nav.Confirm = nil
-		o.activeConfirm = nil
 		if run != nil {
 			run()
 		}
-		return
 	}
-	if !o.confirm.Dialog.Open {
+	if !o.confirm.Dialog.Open && e.Nav.Confirm == pending {
 		e.Nav.Confirm = nil
+	}
+	if o.confirm.Closed() {
 		o.activeConfirm = nil
 	}
 }

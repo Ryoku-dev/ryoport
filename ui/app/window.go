@@ -71,6 +71,9 @@ type shell struct {
 	density        string
 	reduceMotion   bool
 	haveMotion     bool
+	workStamp      workNavStamp
+	workStampReady bool
+	workEnter      anim.Tween
 }
 
 func newShell(window *gioapp.Window, state *store.Store, post func(func()), th *theme.Theme) *shell {
@@ -168,6 +171,7 @@ func (s *shell) Frame(frame gioapp.FrameEvent, ops *op.Ops, snapshot *store.Snap
 	}
 
 	beforeNavigation := navigationStamp(s.nav)
+	s.prepareWorkTransition(gtx, beforeNavigation)
 	paint.Fill(gtx.Ops, e.Th.R.Ground)
 	s.Layout(gtx, e)
 	s.overlays.Layout(gtx, e, s)

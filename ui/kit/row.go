@@ -31,7 +31,9 @@ type Row struct {
 	Pane color.NRGBA
 
 	hover     anim.Tween
+	press     anim.Tween
 	notch     anim.Tween
+	progress  anim.Spring
 	tone      model.Tone
 	toneReady bool
 
@@ -87,7 +89,6 @@ func (r *Row) DoubleClicked(gtx layout.Context) bool {
 
 func (r *Row) Layout(gtx layout.Context, th *theme.Theme, c RowContent, selected, focused bool) layout.Dimensions {
 	r.poll(gtx)
-	r.hover.Duration = th.Motion.Hover
 	r.hover.Ease = anim.EaseChisel
 	r.notch.Duration = th.Motion.Notch
 	r.notch.Ease = anim.EaseChisel
@@ -111,14 +112,14 @@ func (r *Row) Layout(gtx layout.Context, th *theme.Theme, c RowContent, selected
 	rowCtx.Constraints = layout.Exact(image.Pt(w, h))
 	dims := r.Click.Layout(rowCtx, func(gtx layout.Context) layout.Dimensions {
 		hot := r.Hovered() || focused
-		if hot {
-			r.hover.Set(gtx, 1)
-		} else {
-			r.hover.Set(gtx, 0)
-		}
-		hover := r.hover.Value(gtx)
+		hover := hoverValue(gtx, th, &r.hover, hot)
+		pressed := transitionValue(gtx, &r.press, r.Pressed(), th.Motion.Press, th.Motion.Press)
 		if !selected {
-			FillCut(gtx.Ops, image.Rect(0, 0, w, h), 0, theme.Mix(th.R.Stone2, th.R.Stone3, hover))
+			fill := theme.Mix(th.R.Stone2, th.R.Stone3, hover)
+			fill = theme.Mix(fill, th.R.Fg, .06*pressed)
+			FillCut(gtx.Ops, image.Rect(0, 0, w, h), 0, fill)
+		} else if pressed > 0 {
+			FillCut(gtx.Ops, image.Rect(0, 0, w, h), 0, theme.WithAlpha(th.R.OnSel, .08*pressed))
 		}
 
 		notchColor := th.R.Stone(c.Tone)
@@ -216,8 +217,11 @@ func (r *Row) Layout(gtx layout.Context, th *theme.Theme, c RowContent, selected
 		layout.Inset{Left: 16, Right: 12}.Layout(gtx, body)
 
 		if c.Progress >= 0 {
-			frac := max(0, min(1, c.Progress))
-			bladeW := int(math.Round(float64(w) * frac))
+			r.progress.Omega = 4 / float32(th.Motion.Select.Seconds())
+			r.progress.Rest = .001
+			r.progress.Set(float32(max(0, min(1, c.Progress))))
+			frac := r.progress.Value(gtx)
+			bladeW := int(math.Round(float64(w) * float64(frac)))
 			if bladeW > 0 {
 				Blade(gtx.Ops, image.Rect(0, h-max(1, gtx.Dp(2)), bladeW, h), th.R.Lapis)
 			}

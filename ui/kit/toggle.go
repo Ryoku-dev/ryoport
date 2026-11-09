@@ -15,7 +15,7 @@ import (
 
 type Toggle struct {
 	widget.Bool
-	slide anim.Tween
+	slide, tone, hover, focus anim.Tween
 }
 
 func (t *Toggle) Layout(gtx layout.Context, th *theme.Theme, label string) layout.Dimensions {
@@ -41,12 +41,17 @@ func (t *Toggle) Layout(gtx layout.Context, th *theme.Theme, label string) layou
 
 		t.slide.Duration = th.Motion.Select
 		t.slide.Ease = anim.EaseChisel
+		t.tone.Duration = th.Motion.Field
+		t.tone.Ease = anim.EaseChisel
+		target := float32(0)
 		if t.Value {
-			t.slide.Set(gtx, 1)
-		} else {
-			t.slide.Set(gtx, 0)
+			target = 1
 		}
+		t.slide.Set(gtx, target)
+		t.tone.Set(gtx, target)
 		position := t.slide.Value(gtx)
+		tone := t.tone.Value(gtx)
+		hover := hoverValue(gtx, th, &t.hover, t.Hovered())
 		disabled := !original.Source.Enabled()
 
 		var children [3]layout.FlexChild
@@ -58,11 +63,11 @@ func (t *Toggle) Layout(gtx layout.Context, th *theme.Theme, label string) layou
 			if disabled {
 				layer = paint.PushOpacity(gtx.Ops, 0.38)
 			}
-			if t.Value {
-				FillCut(gtx.Ops, track, trackCut, th.R.Sel)
-			} else {
-				FillCut(gtx.Ops, track, trackCut, th.R.Stone4)
-				StrokeCut(gtx.Ops, track, trackCut, max(1, gtx.Dp(1)), th.R.Vein)
+			trackColor := theme.Mix(th.R.Stone4, th.R.Sel, tone)
+			trackColor = theme.Mix(trackColor, th.R.Fg, .06*hover)
+			FillCut(gtx.Ops, track, trackCut, trackColor)
+			if tone < 1 {
+				StrokeCut(gtx.Ops, track, trackCut, max(1, gtx.Dp(1)), theme.WithAlpha(th.R.Vein, 1-tone))
 			}
 
 			knobSize := min(gtx.Dp(14), min(size.X, size.Y))
@@ -71,10 +76,7 @@ func (t *Toggle) Layout(gtx layout.Context, th *theme.Theme, label string) layou
 			right := max(left, size.X-gtx.Dp(4)-knobSize)
 			x := int(lerp(float32(left), float32(right), position) + 0.5)
 			y := (size.Y - knobSize) / 2
-			knobColor := th.R.Fg2
-			if t.Value {
-				knobColor = th.R.OnSel
-			}
+			knobColor := theme.Mix(th.R.Fg2, th.R.OnSel, position)
 			offset := op.Offset(image.Pt(x, y)).Push(gtx.Ops)
 			FillCut(gtx.Ops, image.Rect(0, 0, knobSize, knobSize), knobCut, knobColor)
 			offset.Pop()
@@ -96,8 +98,7 @@ func (t *Toggle) Layout(gtx layout.Context, th *theme.Theme, label string) layou
 		}
 		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx, children[:count]...)
 	})
-	if original.Focused(&t.Bool) {
-		FocusRing(original, th, image.Rectangle{Max: dims.Size}, trackCut)
-	}
+	focus := focusValue(original, th, &t.focus, original.Focused(&t.Bool))
+	FocusRingAlpha(original, th, image.Rectangle{Max: dims.Size}, trackCut, focus)
 	return dims
 }

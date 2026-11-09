@@ -8,6 +8,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
@@ -20,10 +21,11 @@ type MenuItem struct {
 }
 
 type Menu struct {
-	clicks   []Click
-	disabled []bool
-	divider  []bool
-	pending  []bool
+	clicks       []Click
+	disabled     []bool
+	divider      []bool
+	pending      []bool
+	hover, press []anim.Tween
 }
 
 func (m *Menu) prepare(items []MenuItem) {
@@ -40,6 +42,16 @@ func (m *Menu) prepare(items []MenuItem) {
 	}
 	if len(m.pending) != len(items) {
 		m.pending = make([]bool, len(items))
+	}
+	if len(m.hover) != len(items) {
+		hover := make([]anim.Tween, len(items))
+		copy(hover, m.hover)
+		m.hover = hover
+	}
+	if len(m.press) != len(items) {
+		press := make([]anim.Tween, len(items))
+		copy(press, m.press)
+		m.press = press
 	}
 	for i, item := range items {
 		m.disabled[i] = item.Disabled
@@ -78,8 +90,12 @@ func (m *Menu) Layout(gtx layout.Context, th *theme.Theme, items []MenuItem) lay
 					height := gtx.Dp(40)
 					gtx.Constraints.Min.Y = height
 					gtx.Constraints.Max.Y = height
-					if m.clicks[i].Hovered() && !item.Disabled {
-						FillCut(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, height), 0, th.R.Stone3)
+					hover := hoverValue(gtx, th, &m.hover[i], m.clicks[i].Hovered() && !item.Disabled)
+					pressed := transitionValue(gtx, &m.press[i], m.clicks[i].Pressed() && !item.Disabled, th.Motion.Press, th.Motion.Press)
+					if hover > 0 || pressed > 0 {
+						fill := theme.Mix(th.R.Stone4, th.R.Stone3, hover)
+						fill = theme.Mix(fill, th.R.Fg, .08*pressed)
+						FillCut(gtx.Ops, image.Rect(0, 0, gtx.Constraints.Max.X, height), 0, fill)
 					}
 					return layout.Inset{Left: 16, Right: 16}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 						return centerY(gtx, func(gtx layout.Context) layout.Dimensions {

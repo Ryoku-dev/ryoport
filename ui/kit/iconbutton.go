@@ -15,9 +15,9 @@ import (
 
 type IconButton struct {
 	Click
-	Small, Busy bool
-	Notch       color.NRGBA
-	press       anim.Tween
+	Small, Busy         bool
+	Notch               color.NRGBA
+	press, hover, focus anim.Tween
 }
 
 func (b *IconButton) Clicked(gtx layout.Context) bool {
@@ -58,7 +58,8 @@ func (b *IconButton) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind
 		sink := int(float32(gtx.Dp(1))*pressed + 0.5)
 
 		r := image.Rectangle{Max: constrainMax(gtx, image.Pt(sz, sz))}
-		ink := drawButtonSurface(gtx, th, r, finalCut, kind, b.Hovered() && !b.Busy)
+		hover := hoverValue(gtx, th, &b.hover, b.Hovered() && !b.Busy)
+		ink := drawButtonSurface(gtx, th, r, finalCut, kind, hover)
 		is := gtx.Dp(iconSize)
 		offset := op.Offset(image.Pt((r.Dx()-is)/2, (r.Dy()-is)/2+sink)).Push(gtx.Ops)
 		if b.Busy {
@@ -72,8 +73,7 @@ func (b *IconButton) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind
 		}
 		return layout.Dimensions{Size: r.Size()}
 	})
-	if original.Focused(&b.Click.Clickable) {
-		FocusRing(original, th, image.Rectangle{Max: dims.Size}, finalCut)
-	}
+	focus := focusValue(original, th, &b.focus, original.Focused(&b.Click.Clickable))
+	FocusRingAlpha(original, th, image.Rectangle{Max: dims.Size}, finalCut, focus)
 	return dims
 }

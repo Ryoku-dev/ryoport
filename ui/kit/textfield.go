@@ -6,6 +6,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/widget"
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
@@ -15,6 +16,7 @@ type TextField struct {
 	Secret, Mono bool
 	reveal       IconButton
 	revealed     bool
+	focus        anim.Tween
 }
 
 func (f *TextField) Layout(gtx layout.Context, th *theme.Theme, label, placeholder, help, errText string) layout.Dimensions {
@@ -49,11 +51,13 @@ func (f *TextField) Layout(gtx layout.Context, th *theme.Theme, label, placehold
 		cut := gtx.Dp(th.Cut.Mid)
 		FillCut(gtx.Ops, r, cut, disabledInk(gtx, th.R.Stone3))
 		outline := th.R.Fg2
+		alpha := focusValue(gtx, th, &f.focus, gtx.Focused(&f.Editor))
 		if errText != "" {
 			outline = th.R.Jasper
+			alpha = 1
 		}
-		if gtx.Focused(&f.Editor) || errText != "" {
-			StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), disabledInk(gtx, outline))
+		if alpha > 0 {
+			StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), disabledInk(gtx, theme.WithAlpha(outline, alpha)))
 		}
 
 		innerWidth := max(0, size.X-gtx.Dp(28))

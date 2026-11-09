@@ -12,6 +12,7 @@ type Confirm struct {
 	cancel  Button
 	confirm Button
 	field   TextField
+	closed  bool
 }
 
 func confirmReady(input, required string) bool {
@@ -58,6 +59,13 @@ func (c *Confirm) Layout(gtx layout.Context, th *theme.Theme, title, body, actio
 	c.Dialog.Layout(gtx, th, title, bodyWidget, keep, danger)
 	if c.Dialog.Closed(gtx) {
 		c.field.SetText("")
+		c.closed = true
 	}
 	return confirmed
+}
+
+func (c *Confirm) Closed() bool {
+	closed := c.closed
+	c.closed = false
+	return closed
 }

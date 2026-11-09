@@ -21,6 +21,7 @@ type placardEntry struct {
 	expires time.Time
 	button  Click
 	enter   anim.Tween
+	hover   anim.Tween
 	started bool
 	pending bool
 }
@@ -99,7 +100,7 @@ func (p *Placards) Layout(gtx layout.Context, th *theme.Theme) layout.Dimensions
 			gtx.Constraints.Min = image.Pt(width, height)
 			gtx.Constraints.Max = image.Pt(width, height)
 			opacity := paint.PushOpacity(gtx.Ops, progress)
-			rise := int(float32(gtx.Dp(16)) * (1 - progress))
+			rise := int(float32(gtx.Dp(8)) * (1 - progress))
 			offset := op.Offset(image.Pt(0, rise)).Push(gtx.Ops)
 			r := image.Rect(0, 0, width, height)
 			cut := gtx.Dp(8)
@@ -125,8 +126,9 @@ func (p *Placards) Layout(gtx layout.Context, th *theme.Theme) layout.Dimensions
 									labelCall := labelRecord.Stop()
 									size := constrainMax(gtx, image.Pt(labelDims.Size.X+gtx.Dp(26), actionHeight))
 									actionRect := image.Rectangle{Max: size}
-									if entry.button.Hovered() {
-										FillCut(gtx.Ops, actionRect, gtx.Dp(th.Cut.Small), theme.WithAlpha(th.R.OnSel, .08))
+									hover := hoverValue(gtx, th, &entry.hover, entry.button.Hovered())
+									if hover > 0 {
+										FillCut(gtx.Ops, actionRect, gtx.Dp(th.Cut.Small), theme.WithAlpha(th.R.OnSel, .08*hover))
 									}
 									StrokeCut(gtx.Ops, actionRect, gtx.Dp(th.Cut.Small), max(1, gtx.Dp(1)), th.R.OnSel)
 									labelOffset := op.Offset(image.Pt((size.X-labelDims.Size.X)/2, (size.Y-labelDims.Size.Y)/2)).Push(gtx.Ops)

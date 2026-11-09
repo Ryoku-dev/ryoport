@@ -3,16 +3,23 @@ package kit
 import (
 	"image"
 
+	"gioui.org/io/key"
 	"gioui.org/layout"
 
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
 
 type Picker struct {
-	button  Click
-	popover Popover
-	menu    Menu
+	button       Click
+	popover      Popover
+	menu         Menu
+	hover, focus anim.Tween
+}
+
+func (p *Picker) Focus(gtx layout.Context) {
+	gtx.Execute(key.FocusCmd{Tag: &p.button.Clickable})
 }
 
 func (p *Picker) Layout(gtx layout.Context, th *theme.Theme, label string, options []string, selected int) layout.Dimensions {
@@ -33,15 +40,13 @@ func (p *Picker) Layout(gtx layout.Context, th *theme.Theme, label string, optio
 			)
 		}
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return p.button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			dims := p.button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				height := gtx.Dp(44)
 				width := max(gtx.Constraints.Min.X, gtx.Dp(160))
 				width = min(width, gtx.Constraints.Max.X)
 				r := image.Rect(0, 0, width, height)
-				fill := th.R.Stone3
-				if p.button.Hovered() {
-					fill = theme.Mix(fill, th.R.Fg, .06)
-				}
+				hover := hoverValue(gtx, th, &p.hover, p.button.Hovered())
+				fill := theme.Mix(th.R.Stone3, th.R.Fg, .06*hover)
 				FillCut(gtx.Ops, r, gtx.Dp(th.Cut.Mid), fill)
 				gtx.Constraints = layout.Exact(r.Max)
 				return layout.Inset{Left: 14, Right: 14}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -58,6 +63,9 @@ func (p *Picker) Layout(gtx layout.Context, th *theme.Theme, label string, optio
 					})
 				})
 			})
+			focus := focusValue(gtx, th, &p.focus, gtx.Focused(&p.button.Clickable))
+			FocusRingAlpha(gtx, th, image.Rectangle{Max: dims.Size}, gtx.Dp(th.Cut.Mid), focus)
+			return dims
 		}))
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
 	}

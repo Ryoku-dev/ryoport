@@ -7,6 +7,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/widget"
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/theme"
 )
@@ -14,6 +15,7 @@ import (
 type Search struct {
 	widget.Editor
 	clear IconButton
+	focus anim.Tween
 }
 
 func (s *Search) Focus(gtx layout.Context) {
@@ -45,8 +47,9 @@ func (s *Search) Layout(gtx layout.Context, th *theme.Theme, placeholder, hint s
 	r := image.Rectangle{Max: size}
 	cut := gtx.Dp(th.Cut.Mid)
 	FillCut(gtx.Ops, r, cut, disabledInk(gtx, th.R.Stone3))
-	if gtx.Focused(&s.Editor) {
-		StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), disabledInk(gtx, th.R.Fg2))
+	focus := focusValue(gtx, th, &s.focus, gtx.Focused(&s.Editor))
+	if focus > 0 {
+		StrokeCut(gtx.Ops, r, cut, max(1, gtx.Dp(1)), disabledInk(gtx, theme.WithAlpha(th.R.Fg2, focus)))
 	}
 
 	iconSize := gtx.Dp(20)

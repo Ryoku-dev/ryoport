@@ -13,13 +13,15 @@ import (
 
 type filterButton struct {
 	Click
-	press anim.Tween
+	press, hover, focus anim.Tween
 }
 
 type Filters struct {
-	buttons []filterButton
-	changed int
-	pending bool
+	buttons  []filterButton
+	widths   []int
+	x, width anim.Tween
+	changed  int
+	pending  bool
 }
 
 func (f *Filters) ensure(n int) {
@@ -51,14 +53,17 @@ func (f *Filters) Layout(gtx layout.Context, th *theme.Theme, labels []string, c
 	gtx.Constraints.Min = image.Point{}
 	f.ensure(len(labels))
 	f.poll(gtx)
+	if cap(f.widths) < len(labels) {
+		f.widths = make([]int, len(labels))
+	} else {
+		f.widths = f.widths[:len(labels)]
+	}
+	gap := gtx.Dp(4)
+	record := op.Record(gtx.Ops)
 	children := make([]layout.FlexChild, 0, len(labels))
 	for i, label := range labels {
 		i, label := i, label
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			kind := Quiet
-			if i == selected {
-				kind = On
-			}
 			var cut int
 			dims := f.buttons[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				semantic.Button.Add(gtx.Ops)
@@ -74,7 +79,13 @@ func (f *Filters) Layout(gtx layout.Context, th *theme.Theme, labels []string, c
 				pressed := f.buttons[i].press.Value(gtx)
 				cut = gtx.Dp(th.Cut.Small) + int(float32(gtx.Dp(4))*pressed+0.5)
 				sink := int(float32(gtx.Dp(1))*pressed + 0.5)
-				palette := interactiveColors(gtx, th, kind, f.buttons[i].Hovered())
+				hover := hoverValue(gtx, th, &f.buttons[i].hover, f.buttons[i].Hovered() && i != selected)
+				palette := interactiveColors(gtx, th, Quiet, hover)
+				if i == selected {
+					palette.fill = theme.WithAlpha(th.R.OnSel, .08*pressed)
+					palette.ink = disabledInk(gtx, th.R.OnSel)
+					palette.stroke = false
+				}
 
 				contentGTX := gtx
 				contentGTX.Constraints.Min = image.Point{}
@@ -102,11 +113,28 @@ func (f *Filters) Layout(gtx layout.Context, th *theme.Theme, labels []string, c
 				offset.Pop()
 				return layout.Dimensions{Size: size}
 			})
-			if gtx.Focused(&f.buttons[i].Click.Clickable) {
-				FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, cut)
-			}
+			f.widths[i] = dims.Size.X
+			focus := focusValue(gtx, th, &f.buttons[i].focus, gtx.Focused(&f.buttons[i].Click.Clickable))
+			FocusRingAlpha(gtx, th, image.Rectangle{Max: dims.Size}, cut, focus)
 			return dims
 		}))
 	}
-	return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(4)}.Layout(gtx, children...)
+	dims := layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gap}.Layout(gtx, children...)
+	content := record.Stop()
+
+	if selected >= 0 && selected < len(f.widths) {
+		targetX := selected * gap
+		for i := range selected {
+			targetX += f.widths[i]
+		}
+		f.x.Duration, f.width.Duration = th.Motion.Select, th.Motion.Select
+		f.x.Ease, f.width.Ease = anim.EaseChisel, anim.EaseChisel
+		f.x.Set(gtx, float32(targetX))
+		f.width.Set(gtx, float32(f.widths[selected]))
+		x := int(f.x.Value(gtx) + .5)
+		width := int(f.width.Value(gtx) + .5)
+		FillCut(gtx.Ops, image.Rect(x, 0, x+width, gtx.Dp(32)), gtx.Dp(th.Cut.Small), disabledInk(gtx, th.R.Sel))
+	}
+	content.Add(gtx.Ops)
+	return dims
 }

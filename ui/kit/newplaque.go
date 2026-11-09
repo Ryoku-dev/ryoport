@@ -13,7 +13,7 @@ import (
 
 type NewPlaque struct {
 	Click
-	press anim.Tween
+	press, hover, focus anim.Tween
 }
 
 func (p *NewPlaque) Layout(gtx layout.Context, th *theme.Theme, compact, open bool) layout.Dimensions {
@@ -36,7 +36,8 @@ func (p *NewPlaque) Layout(gtx layout.Context, th *theme.Theme, compact, open bo
 		finalCut = cut + int(float32(gtx.Dp(4))*pressed+0.5)
 		sink := int(float32(gtx.Dp(1))*pressed + 0.5)
 		r := image.Rectangle{Max: constrainMax(gtx, image.Pt(w, h))}
-		ink := drawButtonSurface(gtx, th, r, finalCut, Gold, p.Hovered())
+		hover := hoverValue(gtx, th, &p.hover, p.Hovered())
+		ink := drawButtonSurface(gtx, th, r, finalCut, Gold, hover)
 		icon := icons.Add
 		if open {
 			icon = icons.Close
@@ -61,8 +62,7 @@ func (p *NewPlaque) Layout(gtx layout.Context, th *theme.Theme, compact, open bo
 		}
 		return layout.Dimensions{Size: r.Size()}
 	})
-	if gtx.Focused(&p.Click.Clickable) {
-		FocusRing(gtx, th, image.Rectangle{Max: dims.Size}, finalCut)
-	}
+	focus := focusValue(gtx, th, &p.focus, gtx.Focused(&p.Click.Clickable))
+	FocusRingAlpha(gtx, th, image.Rectangle{Max: dims.Size}, finalCut, focus)
 	return dims
 }

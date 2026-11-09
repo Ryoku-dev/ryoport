@@ -11,6 +11,7 @@ import (
 
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/store"
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/env"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/kit"
@@ -34,6 +35,29 @@ const (
 	workActivity
 	workSettings
 )
+
+type workNavStamp struct {
+	page     store.Page
+	selected model.ID
+	draft    env.Draft
+}
+
+func (s *shell) prepareWorkTransition(gtx layout.Context, stamp navStamp) {
+	work := workNavStamp{page: stamp.page, selected: stamp.selected, draft: stamp.draft}
+	if !s.workStampReady {
+		s.workStampReady = true
+		s.workStamp = work
+		s.workEnter.Set(gtx, 1)
+		return
+	}
+	if s.workStamp == work {
+		return
+	}
+	s.workStamp = work
+	s.workEnter = anim.Tween{Duration: s.theme.Motion.Notch, Ease: anim.EaseChisel}
+	s.workEnter.Set(gtx, 0)
+	s.workEnter.Set(gtx, 1)
+}
 
 func windowClass(width unit.Dp) env.Class {
 	return env.ClassFor(width)
@@ -250,9 +274,32 @@ func (s *shell) layoutPane(gtx layout.Context, e *env.Env, work bool, body layou
 	if bodySize.Y < 0 {
 		bodySize.Y = 0
 	}
+	body = s.transitionWorkPane(gtx, work, body)
 	layoutAt(gtx, image.Pt(0, strip), bodySize, body)
 	stack.Pop()
 	return layout.Dimensions{Size: size}
+}
+
+func (s *shell) transitionWorkPane(gtx layout.Context, work bool, body layout.Widget) layout.Widget {
+	if !work {
+		return body
+	}
+	progress := s.workEnter.Value(gtx)
+	if progress >= 1 {
+		return body
+	}
+	return func(gtx layout.Context) layout.Dimensions {
+		record := op.Record(gtx.Ops)
+		dims := body(gtx)
+		call := record.Stop()
+		opacity := paint.PushOpacity(gtx.Ops, progress)
+		rise := int(float32(gtx.Dp(8)) * (1 - progress))
+		offset := op.Offset(image.Pt(0, rise)).Push(gtx.Ops)
+		call.Add(gtx.Ops)
+		offset.Pop()
+		opacity.Pop()
+		return dims
+	}
 }
 
 func layoutAt(gtx layout.Context, at, size image.Point, widget layout.Widget) layout.Dimensions {

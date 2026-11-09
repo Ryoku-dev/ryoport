@@ -17,7 +17,8 @@ type RowList struct {
 	heights       []int
 	offsets       []int
 	defaultHeight int
-	slabY         anim.Spring
+	slabY         anim.Tween
+	slabTarget    int
 	selected      int
 	selectedReady bool
 	slabVisible   bool
@@ -68,7 +69,8 @@ func (l *RowList) Layout(gtx layout.Context, th *theme.Theme, n int, selected in
 	fallback := gtx.Dp(th.RowHeight())
 	l.resize(n, fallback)
 	l.List.Gap = gap
-	l.slabY.Omega = 4 / float32(th.Motion.Select.Seconds())
+	l.slabY.Duration = th.Motion.Select
+	l.slabY.Ease = anim.EaseChisel
 
 	macro := op.Record(gtx.Ops)
 	dims := l.List.Layout(gtx, th, n, func(gtx layout.Context, i int) layout.Dimensions {
@@ -93,12 +95,20 @@ func (l *RowList) Layout(gtx layout.Context, th *theme.Theme, n int, selected in
 	}
 	changed := !l.selectedReady || l.selected != selected
 	if visible {
-		if changed && l.selectedReady && l.slabVisible {
-			l.slabY.Set(float32(targetY))
-		} else {
-			l.slabY.Snap(float32(targetY))
+		switch {
+		case !l.selectedReady || !l.slabVisible:
+			l.slabY = anim.Tween{Duration: th.Motion.Select, Ease: anim.EaseChisel}
+			l.slabY.Set(gtx, float32(targetY))
+		case changed:
+			l.slabY.Set(gtx, float32(targetY))
+		case l.slabTarget != targetY:
+			// Scrolling moves the selected row and slab together; only a
+			// selection change glides independently.
+			l.slabY = anim.Tween{Duration: th.Motion.Select, Ease: anim.EaseChisel}
+			l.slabY.Set(gtx, float32(targetY))
 		}
-		y := int(l.slabY.Value(gtx))
+		l.slabTarget = targetY
+		y := int(l.slabY.Value(gtx) + .5)
 		stack := clip.Rect(image.Rectangle{Max: dims.Size}).Push(gtx.Ops)
 		FillCut(gtx.Ops, image.Rect(0, y, dims.Size.X, y+slabH), 0, th.R.Sel)
 		stack.Pop()
