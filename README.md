@@ -11,10 +11,10 @@ It can create and operate machines, open remote sessions, show health and resour
 
 ### Ryoku
 
-Ryoport comes with Ryoku. If it is not installed, run:
+Ryoport comes with Ryoku from its v2 line, selected by default in the installer. If you skipped or removed it, run:
 
 ```sh
-ryoku-host pkg add ryoport
+sudo ryoku-host pkg install ryoport
 ```
 
 ### Arch Linux and CachyOS
@@ -36,9 +36,9 @@ mkdir -p ~/.local
 tar -C ~/.local -xzf ryoport-*-linux-x86_64.tar.gz
 ```
 
-Ryoport updates this kind of installation itself.
+Ryoport updates this kind of installation itself. An install made from the 1.0.0 tarball can't, because that tarball has no install marker, so extract a newer tarball over it once.
 
-Fedora, Void Linux and Nix packages are also available through Ryoku's repositories. Those builds update through their system package manager.
+Ryoku v2 also carries Fedora, Void Linux and Nix packages in its repositories. Those builds update through their system package manager.
 
 ## Build from source
 
