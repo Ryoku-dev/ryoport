@@ -46,7 +46,7 @@ func mainRYOVM(args []string, stdout, stderr io.Writer) int {
 		if err := command.Run(); err != nil {
 			return fail(stderr, "", err)
 		}
-		fmt.Fprintln(stdout, "Done — quickemu is installed. Close this window; ryovm lights up in a few seconds.")
+		fmt.Fprintln(stdout, "Done: quickemu is installed. Close this window and Ryoport picks it up when you return to it.")
 		return 0
 	case "catalog":
 		refresh := len(rest) > 0 && rest[0] == "--refresh"

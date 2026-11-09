@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -215,6 +216,50 @@ func hasFix(alerts []model.Alert, fix model.Fix) bool {
 		}
 	}
 	return false
+}
+
+func TestRefocusPicksUpAnEngineInstalledWhileOpen(t *testing.T) {
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	published := make(chan struct{}, 1)
+	s := New(Options{
+		Now: func() time.Time { return time.Unix(1, 0) },
+		Invalidate: func() {
+			select {
+			case published <- struct{}{}:
+			default:
+			}
+		},
+	})
+	s.mu.Lock()
+	s.ctx = context.Background()
+	s.host.Setup = vm.SetupAdvice{Hint: "Install quickemu."}
+	s.host.Engine = s.o.VM.Caps(s.ctx)
+	s.publishLocked()
+	s.mu.Unlock()
+	if !hasFix(s.Snapshot().Alerts, model.FixInstallEngine) {
+		t.Fatal("no engine alert before the install")
+	}
+
+	for _, name := range []string{"quickemu", "quickget", "qemu-system-x86_64"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\necho 4.9.9\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.SetFocus(Focus{Visible: true})
+	s.SetFocus(Focus{Visible: true, Focused: true})
+	select {
+	case <-published:
+	case <-time.After(5 * time.Second):
+		t.Fatal("refocusing the window never re-read the engine")
+	}
+	snap := s.Snapshot()
+	if hasFix(snap.Alerts, model.FixInstallEngine) {
+		t.Fatalf("engine alert survived the install: %#v", snap.Alerts)
+	}
+	if snap.Host.Engine.Version != "4.9.9" {
+		t.Fatalf("engine version = %q, want 4.9.9", snap.Host.Engine.Version)
+	}
 }
 
 func TestJobMappingFromBuildEvents(t *testing.T) {

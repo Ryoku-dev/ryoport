@@ -170,11 +170,35 @@ func (s *Store) SetFocus(focus Focus) {
 		return
 	}
 	s.focus = focus
+	recheckEngine := focus.Focused && !previous.Focused && s.ctx != nil && engineMissing(s.host.Engine)
 	s.mu.Unlock()
 	s.signalPollers()
+	if recheckEngine {
+		go s.refreshEngine()
+	}
 	if focus.Selected != previous.Selected && focus.Selected.Kind() == model.KindMachine {
 		go s.refreshMachineAux(focus.Selected.Key())
 	}
+}
+
+// engineMissing covers everything the engine alerts ask the user to install or enable.
+func engineMissing(engine vm.Caps) bool {
+	return !engine.Quickemu || !engine.Quickget || !engine.QEMU || !engine.KVM
+}
+
+// refreshEngine picks up an engine installed while Ryoport was open, so the
+// user sees it after closing the installer terminal instead of after a restart.
+func (s *Store) refreshEngine() {
+	engine := s.o.VM.Caps(s.currentContext())
+	s.mu.Lock()
+	if engine == s.host.Engine {
+		s.mu.Unlock()
+		return
+	}
+	s.host.Engine = engine
+	s.publishLocked()
+	s.mu.Unlock()
+	s.o.Invalidate()
 }
 
 func (s *Store) Refresh() {
@@ -194,8 +218,12 @@ func (s *Store) Refresh() {
 	if focus.Selected.Kind() == model.KindMachine {
 		go s.refreshMachineAux(focus.Selected.Key())
 	}
-	if s.Snapshot().Host.Passthrough {
+	host := s.Snapshot().Host
+	if host.Passthrough {
 		go s.refreshPassthrough()
+	}
+	if engineMissing(host.Engine) {
+		go s.refreshEngine()
 	}
 }
 
