@@ -113,14 +113,16 @@ reserves the next `v1.<minor>.<patch>` tag (patch is one digit, 1.0.9 rolls to
 The tarball holds `bin/ryoport`, the four links,
 `share/applications/dev.ryoku.ryoport.desktop`,
 `share/icons/hicolor/scalable/apps/dev.ryoku.ryoport.svg`,
-`share/metainfo/dev.ryoku.ryoport.metainfo.xml` and `share/licenses/ryoport/`.
+`share/metainfo/dev.ryoku.ryoport.metainfo.xml`, `share/licenses/ryoport/` and
+`share/ryoport/installed`, the marker that names its version and files. Extracted
+into `~/.local`, the marker is what tells Ryoport it may update that install.
 
 ## Updates
 
 | Installed as | Who updates it |
 |---|---|
 | pacman package | the app: download, check the sha256 and the package identity, `pkexec pacman -U` the staged file; on Ryoku v2, `ryoku update` does the same |
-| user tarball | the app: download, check the sha256, swap `~/.local` in place |
+| user tarball | the app: download, check the sha256, run the staged build, swap `~/.local` in place and rewrite the marker |
 | RPM, XBPS, Nix | the system package manager; the app says so and links the release |
 | a source build | nobody; the app says it can't update itself |
 

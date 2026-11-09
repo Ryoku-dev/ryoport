@@ -513,8 +513,11 @@ func pathWithin(path, root string) bool {
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// release tarballs carry this file too, so a plain extract into ~/.local can update itself
+const markerFile = "share/ryoport/installed"
+
 func markerPath() string {
-	return filepath.Join(xdg.Home(), ".local", "share", "ryoport", "installed")
+	return filepath.Join(xdg.Home(), ".local", filepath.FromSlash(markerFile))
 }
 
 func readMarker() (installedMarker, error) {

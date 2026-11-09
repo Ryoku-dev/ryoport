@@ -12,6 +12,21 @@ cleanup() { rm -rf "$staging"; }
 trap cleanup EXIT
 
 make -C "$root" DESTDIR="$staging" PREFIX= install
+
+# without the marker a fresh extract into ~/.local looks like a source build and never updates itself
+marker="share/ryoport/installed"
+mkdir -p "$staging/${marker%/*}"
+: >"$staging/$marker"
+mapfile -t files < <(cd "$staging" && find bin share \( -type f -o -type l \) | LC_ALL=C sort)
+{
+  printf '{\n  "version": "%s",\n  "files": [\n' "$version"
+  for i in "${!files[@]}"; do
+    separator=,
+    (( i < ${#files[@]} - 1 )) || separator=
+    printf '    "%s"%s\n' "${files[$i]}" "$separator"
+  done
+  printf '  ]\n}\n'
+} >"$staging/$marker"
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 epoch="${SOURCE_DATE_EPOCH:-$(git -C "$root" log -1 --format=%ct 2>/dev/null || date +%s)}"

@@ -165,6 +165,10 @@ func validateTarballLayout(root string, files []string) error {
 			license = true
 			continue
 		}
+		// allowed but not required, so a release from before the marker still installs
+		if name == markerFile {
+			continue
+		}
 		allowed := false
 		for _, expected := range required {
 			if name == expected {
