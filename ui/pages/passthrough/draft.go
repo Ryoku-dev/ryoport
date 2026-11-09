@@ -4,7 +4,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gioui.org/io/key"
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/unit"
+	"gioui.org/widget"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	backend "github.com/ryoku-dev/ryoport/internal/passthrough"
 	"github.com/ryoku-dev/ryoport/ui/env"
@@ -30,7 +34,13 @@ type Draft struct {
 	cancel kit.Button
 	gpu    kit.Button
 
-	fileError string
+	initialized bool
+	focusFirst  bool
+	fileError   string
+	validation  struct {
+		name passthroughFieldValidation
+		iso  passthroughFieldValidation
+	}
 }
 
 func NewDraft() *Draft {
@@ -43,10 +53,28 @@ func NewDraft() *Draft {
 	return d
 }
 
+func (d *Draft) initialize() {
+	if d.initialized {
+		return
+	}
+	d.initialized = true
+	d.name.SetText("")
+	d.iso.SetText("")
+	d.os = "windows"
+	d.disk.Value = 64
+	d.ram.Value = 16
+	d.fileError = ""
+	d.validation.name.reset(d.name.Text())
+	d.validation.iso.reset(d.iso.Text())
+	d.focusFirst = true
+}
+
 func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
-	if e == nil || e.Snap == nil || e.Nav == nil || e.Ops == nil {
+	if e == nil || e.Snap == nil || e.Nav == nil || e.Ops == nil || e.Nav.Draft.Kind != env.DraftPassthrough {
 		return layout.Dimensions{Size: gtx.Constraints.Min}
 	}
+	d.initialize()
+	submitted := consumePassthroughSubmit(gtx, &d.name, &d.iso)
 	options := backend.CreateOptions{
 		Name:   strings.TrimSpace(d.name.Text()),
 		ISO:    strings.TrimSpace(d.iso.Text()),
@@ -58,6 +86,17 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	if d.fileError != "" {
 		errs.ISO = d.fileError
 	}
+	d.observeValidation(gtx)
+	visibleErrs := passthroughDraftErrors{
+		Name: d.validation.name.visible(errs.Name),
+		ISO:  d.validation.iso.visible(errs.ISO),
+		OS:   errs.OS,
+		Disk: errs.Disk,
+		RAM:  errs.RAM,
+	}
+	if d.fileError != "" {
+		visibleErrs.ISO = d.fileError
+	}
 	header := func(gtx layout.Context) layout.Dimensions {
 		return d.header.Layout(gtx, e, common.HeaderContent{
 			Tone:    model.ToneIdle,
@@ -66,7 +105,7 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			Outline: -1,
 			Proof:   []common.Span{{Text: "Install a guest that owns the GPU and opens through Looking Glass."}},
 			Acts: func(gtx layout.Context) layout.Dimensions {
-				return d.actions(gtx, e, options, errs)
+				return d.actions(gtx, e, options, errs, submitted)
 			},
 		})
 	}
@@ -74,18 +113,22 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 		if !e.Snap.GPU.Ready {
 			return d.blocker(gtx, e)
 		}
-		return d.form(gtx, e, errs)
+		return d.form(gtx, e, visibleErrs)
 	}
 	return d.pane.Layout(gtx, e, header, nil, 0, body)
 }
 
-func (d *Draft) actions(gtx layout.Context, e *env.Env, options backend.CreateOptions, errs passthroughDraftErrors) layout.Dimensions {
-	if d.create.Clicked(gtx) && e.Snap.GPU.Ready && !errs.Any() {
+func (d *Draft) actions(gtx layout.Context, e *env.Env, options backend.CreateOptions, errs passthroughDraftErrors, submitted bool) layout.Dimensions {
+	createClicked := d.create.Clicked(gtx)
+	// Create uses full validation and stays disabled; field errors wait until an edited field loses focus.
+	if e.Snap.GPU.Ready && !errs.Any() && (createClicked || submitted) {
 		e.Ops.CreatePassthrough(options)
 		e.Nav.CloseDraft()
+		d.initialized = false
 	}
 	if d.cancel.Clicked(gtx) {
 		e.Nav.CloseDraft()
+		d.initialized = false
 	}
 	return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S2)}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -139,41 +182,138 @@ func (d *Draft) form(gtx layout.Context, e *env.Env, errs passthroughDraftErrors
 	if d.os == "linux" {
 		selectedOS = 1
 	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(common.SectionTitle(e.Th, "Install media", nil)),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return d.name.Layout(gtx, e.Th, "Name", "win11-gpu", "Letters, digits, hyphens, and underscores.", errs.Name)
-		}),
-		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return d.iso.Layout(gtx, e.Th, "ISO", "/home/nero/Downloads/windows.iso", "Choose an install ISO on this computer.", errs.ISO)
-		}),
-		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S2}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return d.browse.Layout(gtx, e.Th, kit.Line, icons.FolderOpen, "Choose ISO")
-		}),
-		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S4}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return d.oses.Layout(gtx, e.Th, []string{"Windows", "Linux"}, nil, selectedOS)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			if errs.OS == "" {
-				return layout.Dimensions{}
-			}
-			return layout.Inset{Top: e.Th.Sp.S2}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return kit.Label{Style: e.Th.T.Caption, Color: e.Th.R.Jasper}.Layout(gtx, e.Th, errs.OS)
-			})
-		}),
-		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S5}.Layout),
-		layout.Rigid(common.SectionTitle(e.Th, "Hardware", nil)),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return stepperRow(gtx, e, "Disk", &d.disk, "GB", errs.Disk)
-		}),
-		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return stepperRow(gtx, e, "Memory", &d.ram, "GB", errs.RAM)
-		}),
+	return passthroughFormColumn(gtx, func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+			layout.Rigid(common.SectionTitle(e.Th, "Install media", nil)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				dims := layoutPassthroughField(gtx, &d.validation.name, &d.name, errs.Name, func(errText string) layout.Dimensions {
+					return d.name.Layout(gtx, e.Th, "Name", "win11-gpu", "Letters, digits, hyphens, and underscores.", errText)
+				})
+				if d.focusFirst {
+					gtx.Execute(key.FocusCmd{Tag: &d.name.Editor})
+					d.focusFirst = false
+				}
+				return dims
+			}),
+			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return layoutPassthroughField(gtx, &d.validation.iso, &d.iso, errs.ISO, func(errText string) layout.Dimensions {
+					return d.iso.Layout(gtx, e.Th, "ISO", "/home/nero/Downloads/windows.iso", "Choose an install ISO on this computer.", errText)
+				})
+			}),
+			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S2}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return d.browse.Layout(gtx, e.Th, kit.Line, icons.FolderOpen, "Choose ISO")
+			}),
+			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S4}.Layout),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return d.oses.Layout(gtx, e.Th, []string{"Windows", "Linux"}, nil, selectedOS)
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if errs.OS == "" {
+					return layout.Dimensions{}
+				}
+				return layout.Inset{Top: e.Th.Sp.S2}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return kit.Label{Style: e.Th.T.Caption, Color: e.Th.R.Jasper}.Layout(gtx, e.Th, errs.OS)
+				})
+			}),
+			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S5}.Layout),
+			layout.Rigid(common.SectionTitle(e.Th, "Hardware", nil)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return passthroughFieldPair(gtx, e,
+					func(gtx layout.Context) layout.Dimensions {
+						return stepperRow(gtx, e, "Disk", &d.disk, "GB", errs.Disk)
+					},
+					func(gtx layout.Context) layout.Dimensions {
+						return stepperRow(gtx, e, "Memory", &d.ram, "GB", errs.RAM)
+					},
+				)
+			}),
+		)
+	})
+}
+
+func passthroughFormColumn(gtx layout.Context, widget layout.Widget) layout.Dimensions {
+	gtx.Constraints.Min.X = 0
+	gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(640)))
+	return widget(gtx)
+}
+
+func passthroughFieldPair(gtx layout.Context, e *env.Env, first, second layout.Widget) layout.Dimensions {
+	if gtx.Constraints.Max.X < gtx.Dp(unit.Dp(520)) {
+		return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
+			layout.Rigid(first),
+			layout.Rigid(second),
+		)
+	}
+	return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
+		layout.Flexed(1, first),
+		layout.Flexed(1, second),
 	)
+}
+
+func layoutPassthroughField(gtx layout.Context, state *passthroughFieldValidation, field *kit.TextField, errText string, widget func(string) layout.Dimensions) layout.Dimensions {
+	state.observeField(gtx, field)
+	dims := widget(state.visible(errText))
+	state.observeField(gtx, field)
+	return dims
+}
+
+type passthroughFieldValidation struct {
+	last                  string
+	edited, focused, show bool
+}
+
+func (v *passthroughFieldValidation) reset(value string) {
+	*v = passthroughFieldValidation{last: value}
+}
+
+func (v *passthroughFieldValidation) observe(value string, focused bool) bool {
+	wasVisible := v.show
+	if value != v.last {
+		v.last = value
+		v.edited = true
+	}
+	if v.focused && !focused && v.edited {
+		v.show = true
+	}
+	v.focused = focused
+	return !wasVisible && v.show
+}
+
+func (v *passthroughFieldValidation) observeField(gtx layout.Context, field *kit.TextField) {
+	if v.observe(field.Text(), gtx.Focused(&field.Editor)) {
+		gtx.Execute(op.InvalidateCmd{})
+	}
+}
+
+func (v passthroughFieldValidation) visible(errText string) string {
+	if v.show {
+		return errText
+	}
+	return ""
+}
+
+func (d *Draft) observeValidation(gtx layout.Context) {
+	d.validation.name.observeField(gtx, &d.name)
+	d.validation.iso.observeField(gtx, &d.iso)
+}
+
+func consumePassthroughSubmit(gtx layout.Context, fields ...*kit.TextField) bool {
+	submitted := false
+	for _, field := range fields {
+		field.Submit = true
+		for {
+			event, ok := field.Update(gtx)
+			if !ok {
+				break
+			}
+			if _, ok := event.(widget.SubmitEvent); ok {
+				submitted = true
+			}
+		}
+	}
+	return submitted
 }
 
 func stepperRow(gtx layout.Context, e *env.Env, label string, stepper *kit.Stepper, suffix, errText string) layout.Dimensions {

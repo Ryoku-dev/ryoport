@@ -4,7 +4,11 @@ import (
 	"strconv"
 	"strings"
 
+	"gioui.org/io/key"
 	"gioui.org/layout"
+	"gioui.org/op"
+	"gioui.org/unit"
+	"gioui.org/widget"
 	backend "github.com/ryoku-dev/ryoport/internal/console"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/ui/env"
@@ -28,13 +32,28 @@ type Draft struct {
 	domain  kit.TextField
 	full    kit.Toggle
 
+	advanced           bool
+	advancedOpen       kit.Button
+	advancedDisclosure kit.Disclosure
+
 	save   kit.Button
 	cancel kit.Button
 
 	loaded       bool
 	loadedTarget model.ID
+	focusFirst   bool
 	kind         string
 	profileID    string
+
+	validation struct {
+		name    consoleFieldValidation
+		device  consoleFieldValidation
+		baud    consoleFieldValidation
+		address consoleFieldValidation
+		port    consoleFieldValidation
+		user    consoleFieldValidation
+		domain  consoleFieldValidation
+	}
 }
 
 func NewDraft() *Draft {
@@ -50,10 +69,11 @@ func NewDraft() *Draft {
 }
 
 func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
-	if e == nil || e.Snap == nil || e.Nav == nil || e.Ops == nil {
+	if e == nil || e.Snap == nil || e.Nav == nil || e.Ops == nil || e.Nav.Draft.Kind != env.DraftConsole {
 		return layout.Dimensions{Size: gtx.Constraints.Min}
 	}
 	d.load(e)
+	submitted := consumeConsoleSubmit(gtx, &d.name, &d.device, &d.baud, &d.address, &d.port, &d.user, &d.domain)
 	profile, errs := parseConsoleDraft(
 		d.profileID,
 		d.kind,
@@ -66,6 +86,17 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 		d.domain.Text(),
 		d.full.Value,
 	)
+	d.observeValidation(gtx)
+	visibleErrs := consoleDraftErrors{
+		Kind:    errs.Kind,
+		Name:    d.validation.name.visible(errs.Name),
+		Device:  d.validation.device.visible(errs.Device),
+		Baud:    d.validation.baud.visible(errs.Baud),
+		Address: d.validation.address.visible(errs.Address),
+		Port:    d.validation.port.visible(errs.Port),
+		User:    d.validation.user.visible(errs.User),
+		Domain:  d.validation.domain.visible(errs.Domain),
+	}
 
 	title := "New console"
 	if e.Nav.Draft.Target != "" {
@@ -82,12 +113,12 @@ func (d *Draft) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 			Outline: -1,
 			Proof:   []common.Span{{Text: "Save a direct console connection for quick access from the fleet."}},
 			Acts: func(gtx layout.Context) layout.Dimensions {
-				return d.actions(gtx, e, profile, errs)
+				return d.actions(gtx, e, profile, errs, submitted)
 			},
 		})
 	}
 	body := func(gtx layout.Context) layout.Dimensions {
-		return d.form(gtx, e, errs)
+		return d.form(gtx, e, visibleErrs)
 	}
 	return d.pane.Layout(gtx, e, header, nil, 0, body)
 }
@@ -109,37 +140,48 @@ func (d *Draft) load(e *env.Env) {
 	d.user.SetText("")
 	d.domain.SetText("")
 	d.full.Value = false
-	if target == "" {
-		return
+	d.advanced = false
+	d.advancedDisclosure = kit.Disclosure{}
+	if target != "" {
+		if stored := e.Snap.Consoles[target.Key()]; stored != nil {
+			profile := stored.Profile
+			d.profileID = profile.ID
+			d.kind = profile.Kind
+			d.name.SetText(profile.Name)
+			d.device.SetText(profile.Device)
+			d.baud.SetText(strconv.Itoa(profile.Baud))
+			d.address.SetText(profile.Address)
+			d.port.SetText(strconv.Itoa(profile.Port))
+			d.user.SetText(profile.User)
+			d.domain.SetText(profile.Domain)
+			d.full.Value = profile.Fullscreen
+		}
 	}
-	stored := e.Snap.Consoles[target.Key()]
-	if stored == nil {
-		return
-	}
-	profile := stored.Profile
-	d.profileID = profile.ID
-	d.kind = profile.Kind
-	d.name.SetText(profile.Name)
-	d.device.SetText(profile.Device)
-	d.baud.SetText(strconv.Itoa(profile.Baud))
-	d.address.SetText(profile.Address)
-	d.port.SetText(strconv.Itoa(profile.Port))
-	d.user.SetText(profile.User)
-	d.domain.SetText(profile.Domain)
-	d.full.Value = profile.Fullscreen
+	d.validation.name.reset(d.name.Text())
+	d.validation.device.reset(d.device.Text())
+	d.validation.baud.reset(d.baud.Text())
+	d.validation.address.reset(d.address.Text())
+	d.validation.port.reset(d.port.Text())
+	d.validation.user.reset(d.user.Text())
+	d.validation.domain.reset(d.domain.Text())
+	d.focusFirst = true
 }
 
-func (d *Draft) actions(gtx layout.Context, e *env.Env, profile backend.Profile, errs consoleDraftErrors) layout.Dimensions {
-	if d.save.Clicked(gtx) && !errs.Any() {
+func (d *Draft) actions(gtx layout.Context, e *env.Env, profile backend.Profile, errs consoleDraftErrors, submitted bool) layout.Dimensions {
+	saveClicked := d.save.Clicked(gtx)
+	// Save uses full validation and stays disabled; field errors wait until an edited field loses focus.
+	if !errs.Any() && (saveClicked || submitted) {
 		if profile.ID == "" {
 			profile.ID = backend.NewID()
 		}
 		e.Ops.SaveConsole(profile)
 		e.Nav.CloseDraft()
 		e.Nav.Select(model.NewID(model.KindConsole, profile.ID))
+		d.loaded = false
 	}
 	if d.cancel.Clicked(gtx) {
 		e.Nav.CloseDraft()
+		d.loaded = false
 	}
 	label := "Save"
 	if e.Nav.Draft.Target == "" {
@@ -163,6 +205,7 @@ func (d *Draft) form(gtx layout.Context, e *env.Env, errs consoleDraftErrors) la
 	labels := []string{"Serial", "Telnet", "RDP", "VNC"}
 	if changed, ok := d.kinds.Changed(gtx); ok {
 		d.kind = []string{"serial", "telnet", "rdp", "vnc"}[changed]
+		d.advanced = false
 		switch d.kind {
 		case "telnet":
 			d.port.SetText("23")
@@ -173,68 +216,199 @@ func (d *Draft) form(gtx layout.Context, e *env.Env, errs consoleDraftErrors) la
 		}
 	}
 	selected := kindIndex(d.kind)
-	children := []layout.FlexChild{
-		layout.Rigid(common.SectionTitle(e.Th, "Connection", nil)),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return d.kinds.Layout(gtx, e.Th, labels, nil, selected)
-		}),
-		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S4}.Layout),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return d.name.Layout(gtx, e.Th, "Name", "Router console", "Shown in the fleet.", errs.Name)
-		}),
-		layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-	}
-	if errs.Kind != "" {
-		children = append(children,
+	return consoleFormColumn(gtx, func(gtx layout.Context) layout.Dimensions {
+		children := []layout.FlexChild{
+			layout.Rigid(common.SectionTitle(e.Th, "Connection", nil)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return kit.Label{Style: e.Th.T.Caption, Color: e.Th.R.Jasper}.Layout(gtx, e.Th, errs.Kind)
+				return d.kinds.Layout(gtx, e.Th, labels, nil, selected)
 			}),
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-		)
-	}
-	switch d.kind {
-	case "serial":
-		children = append(children,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.device.Layout(gtx, e.Th, "Device", "/dev/ttyUSB0", "Use the device path reported by the system.", errs.Device)
-			}),
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.baud.Layout(gtx, e.Th, "Baud", "115200", "30 to 4000000.", errs.Baud)
-			}),
-		)
-	default:
-		children = append(children,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.address.Layout(gtx, e.Th, "Address", "10.0.0.5", "A host name or IP address without a scheme.", errs.Address)
-			}),
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.port.Layout(gtx, e.Th, "Port", defaultPort(d.kind), "1 to 65535.", errs.Port)
-			}),
-		)
-	}
-	if d.kind == "rdp" {
-		children = append(children,
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.user.Layout(gtx, e.Th, "User", "alice", "Optional account name.", errs.User)
-			}),
-			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.domain.Layout(gtx, e.Th, "Domain", "WORKGROUP", "Optional Windows domain.", errs.Domain)
-			}),
-		)
-	}
-	if d.kind == "rdp" || d.kind == "vnc" {
-		children = append(children,
 			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S4}.Layout),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return d.full.Layout(gtx, e.Th, "Open fullscreen")
+				dims := layoutConsoleField(gtx, &d.validation.name, &d.name, errs.Name, func(errText string) layout.Dimensions {
+					return d.name.Layout(gtx, e.Th, "Name", "Router console", "Shown in the fleet.", errText)
+				})
+				if d.focusFirst {
+					gtx.Execute(key.FocusCmd{Tag: &d.name.Editor})
+					d.focusFirst = false
+				}
+				return dims
 			}),
+			layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
+		}
+		if errs.Kind != "" {
+			children = append(children,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return kit.Label{Style: e.Th.T.Caption, Color: e.Th.R.Jasper}.Layout(gtx, e.Th, errs.Kind)
+				}),
+				layout.Rigid(layout.Spacer{Height: e.Th.Sp.S3}.Layout),
+			)
+		}
+		switch d.kind {
+		case "serial":
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return consoleFieldPair(gtx, e,
+					func(gtx layout.Context) layout.Dimensions {
+						return layoutConsoleField(gtx, &d.validation.device, &d.device, errs.Device, func(errText string) layout.Dimensions {
+							return d.device.Layout(gtx, e.Th, "Device", "/dev/ttyUSB0", "Use the device path reported by the system.", errText)
+						})
+					},
+					func(gtx layout.Context) layout.Dimensions {
+						return layoutConsoleField(gtx, &d.validation.baud, &d.baud, errs.Baud, func(errText string) layout.Dimensions {
+							return d.baud.Layout(gtx, e.Th, "Baud", "115200", "30 to 4000000.", errText)
+						})
+					},
+				)
+			}))
+		default:
+			children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return consoleFieldPair(gtx, e,
+					func(gtx layout.Context) layout.Dimensions {
+						return layoutConsoleField(gtx, &d.validation.address, &d.address, errs.Address, func(errText string) layout.Dimensions {
+							return d.address.Layout(gtx, e.Th, "Address", "10.0.0.5", "A host name or IP address without a scheme.", errText)
+						})
+					},
+					func(gtx layout.Context) layout.Dimensions {
+						return layoutConsoleField(gtx, &d.validation.port, &d.port, errs.Port, func(errText string) layout.Dimensions {
+							return d.port.Layout(gtx, e.Th, "Port", defaultPort(d.kind), "1 to 65535.", errText)
+						})
+					},
+				)
+			}))
+		}
+		if d.kind == "rdp" {
+			children = append(children,
+				layout.Rigid(layout.Spacer{Height: e.Th.Sp.S5}.Layout),
+				layout.Rigid(common.SectionTitle(e.Th, "Authentication", nil)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return consoleFieldPair(gtx, e,
+						func(gtx layout.Context) layout.Dimensions {
+							return layoutConsoleField(gtx, &d.validation.user, &d.user, errs.User, func(errText string) layout.Dimensions {
+								return d.user.Layout(gtx, e.Th, "User", "alice", "Optional account name.", errText)
+							})
+						},
+						func(gtx layout.Context) layout.Dimensions {
+							return layoutConsoleField(gtx, &d.validation.domain, &d.domain, errs.Domain, func(errText string) layout.Dimensions {
+								return d.domain.Layout(gtx, e.Th, "Domain", "WORKGROUP", "Optional Windows domain.", errText)
+							})
+						},
+					)
+				}),
+			)
+		}
+		if d.kind == "rdp" || d.kind == "vnc" {
+			advancedAction := func(gtx layout.Context) layout.Dimensions {
+				if d.advancedOpen.Clicked(gtx) {
+					d.advanced = !d.advanced
+				}
+				label := "Show"
+				icon := icons.ExpandMore
+				if d.advanced {
+					label = "Hide"
+					icon = icons.ExpandLess
+				}
+				d.advancedOpen.Small = true
+				return d.advancedOpen.Layout(gtx, e.Th, kit.Quiet, icon, label)
+			}
+			children = append(children,
+				layout.Rigid(layout.Spacer{Height: e.Th.Sp.S5}.Layout),
+				layout.Rigid(common.SectionTitle(e.Th, "Advanced", advancedAction)),
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return d.advancedDisclosure.Layout(gtx, e.Th, d.advanced, func(gtx layout.Context) layout.Dimensions {
+						return d.full.Layout(gtx, e.Th, "Open fullscreen")
+					})
+				}),
+			)
+		}
+		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+	})
+}
+
+func consoleFormColumn(gtx layout.Context, widget layout.Widget) layout.Dimensions {
+	gtx.Constraints.Min.X = 0
+	gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(unit.Dp(640)))
+	return widget(gtx)
+}
+
+func consoleFieldPair(gtx layout.Context, e *env.Env, first, second layout.Widget) layout.Dimensions {
+	if gtx.Constraints.Max.X < gtx.Dp(unit.Dp(520)) {
+		return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
+			layout.Rigid(first),
+			layout.Rigid(second),
 		)
 	}
-	return layout.Flex{Axis: layout.Vertical}.Layout(gtx, children...)
+	return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
+		layout.Flexed(1, first),
+		layout.Flexed(1, second),
+	)
+}
+
+func layoutConsoleField(gtx layout.Context, state *consoleFieldValidation, field *kit.TextField, errText string, widget func(string) layout.Dimensions) layout.Dimensions {
+	state.observeField(gtx, field)
+	dims := widget(state.visible(errText))
+	state.observeField(gtx, field)
+	return dims
+}
+
+type consoleFieldValidation struct {
+	last                  string
+	edited, focused, show bool
+}
+
+func (v *consoleFieldValidation) reset(value string) {
+	*v = consoleFieldValidation{last: value}
+}
+
+func (v *consoleFieldValidation) observe(value string, focused bool) bool {
+	wasVisible := v.show
+	if value != v.last {
+		v.last = value
+		v.edited = true
+	}
+	if v.focused && !focused && v.edited {
+		v.show = true
+	}
+	v.focused = focused
+	return !wasVisible && v.show
+}
+
+func (v *consoleFieldValidation) observeField(gtx layout.Context, field *kit.TextField) {
+	if v.observe(field.Text(), gtx.Focused(&field.Editor)) {
+		gtx.Execute(op.InvalidateCmd{})
+	}
+}
+
+func (v consoleFieldValidation) visible(errText string) string {
+	if v.show {
+		return errText
+	}
+	return ""
+}
+
+func (d *Draft) observeValidation(gtx layout.Context) {
+	d.validation.name.observeField(gtx, &d.name)
+	d.validation.device.observeField(gtx, &d.device)
+	d.validation.baud.observeField(gtx, &d.baud)
+	d.validation.address.observeField(gtx, &d.address)
+	d.validation.port.observeField(gtx, &d.port)
+	d.validation.user.observeField(gtx, &d.user)
+	d.validation.domain.observeField(gtx, &d.domain)
+}
+
+func consumeConsoleSubmit(gtx layout.Context, fields ...*kit.TextField) bool {
+	submitted := false
+	for _, field := range fields {
+		field.Submit = true
+		for {
+			event, ok := field.Update(gtx)
+			if !ok {
+				break
+			}
+			if _, ok := event.(widget.SubmitEvent); ok {
+				submitted = true
+			}
+		}
+	}
+	return submitted
 }
 
 type consoleDraftErrors struct {

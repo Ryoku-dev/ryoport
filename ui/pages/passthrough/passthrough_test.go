@@ -68,3 +68,27 @@ func TestValidatePassthroughDraftRejectsBackendLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestPassthroughDraftFieldErrorWaitsForEditedBlur(t *testing.T) {
+	var state passthroughFieldValidation
+	state.reset("")
+	errText := validatePassthroughDraft(backend.CreateOptions{
+		ISO: "/images/guest.iso", OS: "linux", DiskGB: 64, RAMMB: 16 * 1024,
+	}).Name
+	if got := state.visible(errText); got != "" {
+		t.Fatalf("fresh field error = %q, want none", got)
+	}
+
+	state.observe("", true)
+	state.observe("bad name", true)
+	errText = validatePassthroughDraft(backend.CreateOptions{
+		Name: "bad name", ISO: "/images/guest.iso", OS: "linux", DiskGB: 64, RAMMB: 16 * 1024,
+	}).Name
+	if got := state.visible(errText); got != "" {
+		t.Fatalf("focused edited field error = %q, want none", got)
+	}
+	state.observe("bad name", false)
+	if got := state.visible(errText); got == "" {
+		t.Fatal("edited field did not show its error after losing focus")
+	}
+}

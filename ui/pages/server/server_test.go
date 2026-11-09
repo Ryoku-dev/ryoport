@@ -114,6 +114,26 @@ func TestValidateDraft(t *testing.T) {
 	}
 }
 
+func TestDraftFieldErrorWaitsForEditedBlur(t *testing.T) {
+	var state fieldValidation
+	state.reset("")
+	errText := validateDraft(validationInput{Host: "host", Port: "22"}).Alias
+	if got := state.visible(errText); got != "" {
+		t.Fatalf("fresh field error = %q, want none", got)
+	}
+
+	state.observe("", true)
+	state.observe("-bad alias", true)
+	errText = validateDraft(validationInput{Alias: "-bad alias", Host: "host", Port: "22"}).Alias
+	if got := state.visible(errText); got != "" {
+		t.Fatalf("focused edited field error = %q, want none", got)
+	}
+	state.observe("-bad alias", false)
+	if got := state.visible(errText); got == "" {
+		t.Fatal("edited field did not show its error after losing focus")
+	}
+}
+
 func TestValidateTunnelSpec(t *testing.T) {
 	for _, spec := range []string{
 		"L:8080:127.0.0.1:80",

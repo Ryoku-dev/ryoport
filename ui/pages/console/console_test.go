@@ -129,3 +129,23 @@ func TestParseConsoleDraftRejectsInvalidConnectionFields(t *testing.T) {
 		})
 	}
 }
+
+func TestConsoleDraftFieldErrorWaitsForEditedBlur(t *testing.T) {
+	var state consoleFieldValidation
+	state.reset("")
+	_, errs := parseConsoleDraft("", "serial", "", "/dev/ttyUSB0", "115200", "", "", "", "", false)
+	if got := state.visible(errs.Name); got != "" {
+		t.Fatalf("fresh field error = %q, want none", got)
+	}
+
+	state.observe("", true)
+	state.observe("bad\nname", true)
+	_, errs = parseConsoleDraft("", "serial", "bad\nname", "/dev/ttyUSB0", "115200", "", "", "", "", false)
+	if got := state.visible(errs.Name); got != "" {
+		t.Fatalf("focused edited field error = %q, want none", got)
+	}
+	state.observe("bad\nname", false)
+	if got := state.visible(errs.Name); got == "" {
+		t.Fatal("edited field did not show its error after losing focus")
+	}
+}
