@@ -132,7 +132,7 @@ Running now (live CPU, latency, uptime) on the left; This computer (CPU,
 memory and the free space on the disk that holds the VMs as quiet meters that
 turn amber when nearly full, the engine and passthrough lines) and Recent
 activity on the right. Host figures are read only while the board is on
-screen: every 2 s focused, 5 s unfocused, 10 s on battery. No diagrams.
+screen: every 3 s focused, 15 s unfocused, twice that on battery. No diagrams.
 
 **Activity.** Jobs with cancel, things that need you with their fix, and the
 history by day, filterable by resource. Jobs are drawn on one time scale, so a
@@ -248,7 +248,7 @@ Polling follows what is on screen.
 | server probes | 30 s, 10 s for the selected one | 60 s | off |
 | web app checks | 60 s | off | off |
 | passthrough status | 10 s | 30 s | off |
-| this computer, while the Now board is on screen | 2 s | 5 s | off |
+| this computer, while the Now board is on screen | 3 s | 15 s | off |
 
 On battery every interval doubles. Jobs report their own progress whatever is
 on screen.
