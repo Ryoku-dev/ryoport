@@ -61,10 +61,14 @@ type SetupAdvice struct {
 
 // Setup returns a direct Ryoku install command or distro-neutral guidance.
 func Setup() SetupAdvice {
-	if onPath("ryoku-host") {
-		return SetupAdvice{Argv: []string{"ryoku-host", "pkg", "add", "--needed", "spice-gtk", "libisoburn", "quickemu"}}
+	if !onPath("ryoku-pkg-add") {
+		return SetupAdvice{Hint: "Install quickemu, spice-gtk and xorriso (libisoburn) with your system package manager."}
 	}
-	return SetupAdvice{Hint: "Install quickemu, spice-gtk and xorriso (libisoburn) with your system package manager."}
+	// Arch only has quickemu in the AUR, the other Ryoku editions carry it in a repo
+	if onPath("pacman") {
+		return SetupAdvice{Argv: []string{"sh", "-c", "ryoku-pkg-add spice-gtk libisoburn && ryoku-pkg-aur-add quickemu"}}
+	}
+	return SetupAdvice{Argv: []string{"ryoku-pkg-add", "spice-gtk", "libisoburn", "quickemu"}}
 }
 
 // Paths matches the ryovm paths compatibility output.

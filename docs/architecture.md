@@ -86,7 +86,7 @@ Ryoport runs on any Linux desktop. What Ryoku adds is detected, never assumed:
 |---|---|---|
 | `~/.cache/ryoku/colors.json` | follows the live palette | signature palette |
 | `ryoku-hub gpu vm` | passthrough machines | the kind is hidden |
-| `ryoku-host pkg add` | one-click engine install | the distro command to run |
+| `ryoku-pkg-add`, `ryoku-pkg-aur-add` | one-click engine install in a terminal (quickemu from the AUR on Arch) | the distro command to run |
 | `ryoku-summon` | used by Ryoku's keybind to focus the window | not needed |
 
 ## Window identity
