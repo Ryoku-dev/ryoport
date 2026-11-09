@@ -42,7 +42,8 @@ board second, and a place for long flows a distant third.
 Ryoport's look is Lithic, a UI language made for Ryoku: Material 3's working
 structure (an adaptive list and detail, a navigation rail, real controls,
 tonal containers, motion that answers a cause) in cut stone. Its thesis is
-"cut, not molded".
+"cut, not molded". The full specification, written for other Ryoku apps to
+adopt, with runnable web, QML and Go examples, is in [lithic/](lithic/).
 
 1. **Cut, not molded.** Corners are cut at 45 degrees or square, never
    rounded. The cut follows scale: 16 dp on panes and dialogs (top corners of
@@ -67,7 +68,7 @@ tonal containers, motion that answers a cause) in cut stone. Its thesis is
      stone; an idle row's cut stays empty.
    - **The mineral field:** the header of the selected thing (name, proof,
      actions) sits on a slab tinted with its state's stone.
-   - **The flake:** the standalone token (services, map nodes), a small
+   - **The flake:** the standalone token (services, fact lines), a small
      slanted bar in the stone's colour, outlined when idle, part filled while
      becoming.
 6. **The blade marks progress and place.** A bar whose leading edge is cut at
@@ -103,7 +104,9 @@ update shows as a notch on the Settings tile and nowhere else.
 **List pane.** A "Fleet" title over one line saying how the fleet is ("Three
 running. mika-server needs you."), the search field (Ctrl K opens the palette,
 / focuses it), the filters with live counts (All, Machines, Servers, Consoles),
-then rows grouped by state in the order Needs you, Running, Becoming, Stopped.
+then rows grouped in the order Needs you, Pinned, Running, Becoming, Stopped.
+Pinned holds everything pinned whatever its state, except what needs you,
+which stays in Needs you. Every kind can be pinned from its menu.
 A row is a flat tablet, 56 dp (48 compact density): the notch, the engraved
 logo, the name, one line of facts with the machine's marks after them
 (Disposable in amber first, then Instant and Sealed), and on the right the
@@ -120,11 +123,15 @@ rest). Destructive actions live in the overflow and confirm in a dialog. Under
 the header, tabs on a blade, at most five per kind, and the content on flat
 stone.
 
-**Nothing selected.** The work pane shows the view from above: the fleet
-sentence large, what needs you with the gold action that fixes it, what is
-becoming with its blade, and the map: this computer at the centre, octagonal
-rings at 1, 10 and 100 ms of round trip, every machine a flake placed by how
-far away it is, local machines on the innermost ring.
+**Nothing selected.** The work pane shows the Now board: the fleet sentence
+large with one line of proof under it (when it was checked and how many are
+up), pinned machines as tiles with their state and one action each, then two
+columns from 860 dp: Needs you (each with the action that fixes it) and
+Running now (live CPU, latency, uptime) on the left; This computer (CPU,
+memory and the free space on the disk that holds the VMs as quiet meters that
+turn amber when nearly full, the engine and passthrough lines) and Recent
+activity on the right. Host figures are read only while the board is on
+screen: every 2 s focused, 5 s unfocused, 10 s on battery. No diagrams.
 
 **Activity.** Jobs with cancel, things that need you with their fix, and the
 history by day, filterable by resource. Jobs are drawn on one time scale, so a
@@ -137,14 +144,19 @@ beside one 760 dp column; at medium width the index becomes a row of chips.
 **New.** New (Ctrl N) opens a menu: a machine from the catalogue, an instant
 cloud machine, a machine from an ISO, a machine from a template, a passthrough
 machine (when the host supports it), a server, a console. The catalogue takes
-the work pane: a searchable grid of systems with the chosen system open in a
-column beside it (releases, editions, the size it will get, Create); Enter in
-the search opens the highlighted system. Everything else is a draft in the
-work pane with the advanced part folded shut.
+the work pane: a searchable grid of systems across its full width; choosing a
+system (a click, or Enter in the search) opens it in a 720 dp dialog with its
+releases, editions, the size it will get and Create. Its logo is fetched while
+the tile is hovered, so the dialog opens complete. Everything else is a draft
+in the work pane: one column of at most 640 dp under the header, the advanced
+part folded shut, and no field complaining before it was edited and left.
 
-**Escape** closes the topmost thing: an open menu, then the palette, a draft,
-the catalogue, and finally the open detail, which returns to the view from
-above.
+**Menus and dialogs.** A menu sits 8 dp from its button. A press outside a
+menu or a dialog only closes it; it never also presses what was underneath.
+
+**Escape** closes the topmost thing: an open menu or dialog, then the
+palette, a draft, the catalogue, and finally the open detail, which returns
+to the Now board.
 
 ## Tokens
 
@@ -204,14 +216,17 @@ rest.
 
 | Motion | Duration | What it says |
 |---|---|---|
-| press: the corners chip deeper (7 to 11 dp) and the plaque sinks 1 dp | 90 ms | you pressed it |
-| hover: the row steps up a tone, its claim gives way to its action | 160 ms | this is what Enter will do |
-| select: the selection slab moves; the mineral field changes stone | 240 ms, 320 ms | you are here now |
+| press: the corners chip deeper (7 to 11 dp) and the plaque sinks 1 dp; rows and menu items dip one tone | 90 ms | you pressed it |
+| hover: the tone fades up, a row's claim gives way to its action | 160 ms in, 100 ms out | this is what Enter will do |
+| select: the selection slab glides between rows and the filter slab between chips; the mineral field changes stone | 240 ms, 320 ms | you are here now |
 | notch: a new state is cut into the corner | 200 ms | the state changed |
-| navigate: the rail tile and the tab blade slide | 240 ms | where you went |
-| become: the outlined name fills and the blade advances | with the job | it is being made |
-| remove: a hairline strikes the name, the Undo placard drains | 5 s | you can still take it back |
-| delete: the slab breaks along a diagonal and falls away | 420 ms | it is gone |
+| navigate: the rail tile and the tab blade slide; the work pane's new content fades in rising 8 dp | 240 ms, 200 ms | where you went |
+| open: a menu fades in closing the last 6 dp to its button, a dialog rises 12 dp over its scrim; both leave faster the way they came | 160 ms and 300 ms in, 100 ms and 160 ms out | it came from what you pressed |
+| unfold: a folded section grows to its height and its fields fade in | 200 ms | there is more here |
+| focus: the focus ring fades in | 120 ms | the keyboard is here |
+| become: the outlined name fills and the blade's edge eases to each new value | with the job | it is being made |
+| scroll: a wheel notch glides 120 dp; a trackpad follows the fingers exactly | 140 ms | the page went where you sent it |
+| remove: the Undo placard drains | 5 s | you can still take it back |
 
 Reduced motion (Ryoku's setting or the app's) turns every movement into an
 instant change.
@@ -227,6 +242,7 @@ Polling follows what is on screen.
 | server probes | 30 s, 10 s for the selected one | 60 s | off |
 | web app checks | 60 s | off | off |
 | passthrough status | 10 s | 30 s | off |
+| this computer, while the Now board is on screen | 2 s | 5 s | off |
 
 On battery every interval doubles. Jobs report their own progress whatever is
 on screen.
