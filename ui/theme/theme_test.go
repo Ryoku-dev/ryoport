@@ -75,11 +75,25 @@ func TestFromPaletteMapsLithicRoles(t *testing.T) {
 			}
 			fixed := Signature(test.dark)
 			if got.Gold != values["primary"] || got.OnGold != values["onPrimary"] ||
-				got.Jasper != values["error"] || got.Jade != fixed.Jade ||
+				got.Jasper != contrastTone(values["error"], got.Stone2, test.dark) || got.Jade != fixed.Jade ||
 				got.Lapis != fixed.Lapis || got.Amber != fixed.Amber {
 				t.Errorf("matugen accents were not mapped: %#v", got)
 			}
 		})
+	}
+}
+
+// A desktop in dark mode hands Ryoport its pale error tone; forced into
+// Light, Stop and Remove must still read.
+func TestForcedLightTonesPaleErrorDown(t *testing.T) {
+	got := FromPalette(palette.Palette{
+		Roles:  map[string]color.NRGBA{"error": rgb(0xffb4ab), "primary": rgb(0xa5c8ff), "onPrimary": rgb(0x00315d)},
+		Dark:   false,
+		Forced: true,
+		Source: "wallpaper",
+	})
+	if ratio := contrastRatio(got.Jasper, got.Stone2); ratio < 4.5 {
+		t.Fatalf("jasper %#v reads at %.2f:1 on light stone 2, want 4.5:1", got.Jasper, ratio)
 	}
 }
 
@@ -185,7 +199,7 @@ func TestFromPaletteUsesEditionAccentOutsideRyoku(t *testing.T) {
 		Source: "signature",
 	})
 	signature := Signature(true)
-	if got.Gold != accent || got.OnGold != highestContrastInk(accent) {
+	if got.Gold != accent || got.OnGold != InkOn(accent) {
 		t.Errorf("edition gold = %#v on %#v", got.Gold, got.OnGold)
 	}
 	if got.Sel != signature.Sel || got.OnSel != signature.OnSel ||

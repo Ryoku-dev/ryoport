@@ -42,9 +42,14 @@ func textMaterial(ops *op.Ops, c color.NRGBA) op.CallOp {
 	return m.Stop()
 }
 
+// disabledAlpha keeps a disabled control readable on light stone and on a
+// mineral field while still reading as unavailable; Material's 38 percent
+// left grey type on a pale field below 2:1.
+const disabledAlpha = 0.5
+
 func disabledInk(gtx layout.Context, c color.NRGBA) color.NRGBA {
 	if !gtx.Source.Enabled() {
-		return theme.WithAlpha(c, 0.38)
+		return theme.WithAlpha(c, disabledAlpha)
 	}
 	return c
 }

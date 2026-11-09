@@ -15,7 +15,7 @@ func FromPalette(p palette.Palette) Roles {
 			return r
 		}
 		r.Gold = accent
-		r.OnGold = highestContrastInk(accent)
+		r.OnGold = InkOn(accent)
 		r.GoldInk = contrastTone(accent, r.Stone2, p.Dark)
 		return r
 	}
@@ -59,11 +59,15 @@ func FromPalette(p palette.Palette) Roles {
 	r.Sel = role("secondaryContainer", r.Sel)
 	r.OnSel = role("onSecondaryContainer", r.OnSel)
 	r.OnSel2 = Mix(r.OnSel, r.Sel, 0.45)
-	r.Jasper = role("error", r.Jasper)
+	// The palette's error tone comes from the desktop's own mode, so a
+	// forced light window could get a pale pink meant for dark stone. Tone it
+	// like gold ink so a Stop or Remove always reads at 4.5:1.
+	r.Jasper = contrastTone(role("error", r.Jasper), r.Stone2, p.Dark)
 	return r
 }
 
-func highestContrastInk(background color.NRGBA) color.NRGBA {
+// InkOn is black or white, whichever reads better on background.
+func InkOn(background color.NRGBA) color.NRGBA {
 	black := rgb(0x000000)
 	white := rgb(0xffffff)
 	if contrastRatio(black, background) >= contrastRatio(white, background) {

@@ -61,7 +61,7 @@ func (t *Toggle) Layout(gtx layout.Context, th *theme.Theme, label string) layou
 			track := image.Rectangle{Max: size}
 			var layer paint.OpacityStack
 			if disabled {
-				layer = paint.PushOpacity(gtx.Ops, 0.38)
+				layer = paint.PushOpacity(gtx.Ops, disabledAlpha)
 			}
 			trackColor := theme.Mix(th.R.Stone4, th.R.Sel, tone)
 			trackColor = theme.Mix(trackColor, th.R.Fg, .06*hover)

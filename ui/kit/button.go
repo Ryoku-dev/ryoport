@@ -7,7 +7,6 @@ import (
 	"gioui.org/io/semantic"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"github.com/ryoku-dev/ryoport/ui/anim"
@@ -40,7 +39,7 @@ func colorsFor(th *theme.Theme, kind ButtonKind) buttonColors {
 	case On:
 		return buttonColors{fill: th.R.Sel, ink: th.R.OnSel}
 	case Danger:
-		return buttonColors{fill: th.R.Jasper, ink: color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}}
+		return buttonColors{fill: th.R.Jasper, ink: theme.InkOn(th.R.Jasper)}
 	case DangerLine:
 		return buttonColors{fill: clear, ink: th.R.Jasper, outline: th.R.Jasper, stroke: true}
 	default:
@@ -123,7 +122,9 @@ func (b *Button) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind, ic
 		sink := int(float32(gtx.Dp(1))*pressed + 0.5)
 
 		hover := hoverValue(gtx, th, &b.hover, b.Hovered() && !b.Busy && original.Source.Enabled())
-		palette := normalInteractiveColors(th, kind, hover)
+		// Faded colours rather than an opacity layer: same look, no
+		// offscreen pass for every disabled button on every frame.
+		palette := interactiveColors(original, th, kind, hover)
 		contentGTX := gtx
 		contentGTX.Constraints.Min = image.Point{}
 		contentGTX.Constraints.Max.Y = h
@@ -155,11 +156,6 @@ func (b *Button) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind, ic
 			b.width = size.X
 		}
 		r := image.Rectangle{Max: size}
-		disabled := !original.Source.Enabled()
-		var layer paint.OpacityStack
-		if disabled {
-			layer = paint.PushOpacity(gtx.Ops, 0.38)
-		}
 		FillCut(gtx.Ops, r, finalCut, palette.fill)
 		if palette.stroke {
 			StrokeCut(gtx.Ops, r, finalCut, max(1, gtx.Dp(1)), palette.outline)
@@ -167,9 +163,6 @@ func (b *Button) Layout(gtx layout.Context, th *theme.Theme, kind ButtonKind, ic
 		offset := op.Offset(image.Pt((size.X-content.Size.X)/2, (size.Y-content.Size.Y)/2+sink)).Push(gtx.Ops)
 		call.Add(gtx.Ops)
 		offset.Pop()
-		if disabled {
-			layer.Pop()
-		}
 		return layout.Dimensions{Size: size, Baseline: content.Baseline + (size.Y-content.Size.Y)/2 + sink}
 	})
 	focus := focusValue(original, th, &b.focus, original.Focused(&b.Click.Clickable))
