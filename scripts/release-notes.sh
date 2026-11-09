@@ -15,7 +15,7 @@ git show "$tag:CHANGELOG.md" | awk -v heading="## $tag" '
   active { print }
 '
 cat <<EOF
-## Install or update on Arch, CachyOS or Ryoku
+## Install or update on Arch or CachyOS
 
 Download \`ryoport-$version-1-x86_64.pkg.tar.zst\` and its checksum, then run:
 
@@ -24,7 +24,7 @@ sha256sum -c ryoport-$version-1-x86_64.pkg.tar.zst.sha256
 sudo pacman -U ./ryoport-$version-1-x86_64.pkg.tar.zst
 \`\`\`
 
-Ryoku users can also run \`ryoku update\`.
+Ryoku ships Ryoport with its v2 line, where \`ryoku update\` installs and updates it. Ryoku v1 keeps its own built-in Ryoport.
 
 ## Install on another Linux distribution
 

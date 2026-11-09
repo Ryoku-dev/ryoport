@@ -119,7 +119,7 @@ The tarball holds `bin/ryoport`, the four links,
 
 | Installed as | Who updates it |
 |---|---|
-| pacman package | the app: download, check the sha256 and the package identity, `pkexec pacman -U` the staged file; `ryoku update` does the same on Ryoku |
+| pacman package | the app: download, check the sha256 and the package identity, `pkexec pacman -U` the staged file; on Ryoku v2, `ryoku update` does the same |
 | user tarball | the app: download, check the sha256, swap `~/.local` in place |
 | RPM, XBPS, Nix | the system package manager; the app says so and links the release |
 | a source build | nobody; the app says it can't update itself |
