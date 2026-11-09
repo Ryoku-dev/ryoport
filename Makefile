@@ -7,7 +7,7 @@ BINARY := build/ryoport
 
 build:
 	mkdir -p build
-	CGO_ENABLED=1 $(GO) build -trimpath -ldflags="-s -w" -o $(BINARY) ./cmd/ryoport
+	CGO_ENABLED=1 $(GO) build -buildmode=pie -trimpath -ldflags="-s -w" -o $(BINARY) ./cmd/ryoport
 
 test:
 	$(GO) test ./...
