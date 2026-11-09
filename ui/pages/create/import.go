@@ -18,17 +18,19 @@ var guestValues = []string{"linux", "windows", "other"}
 
 // Import is the draft for a machine installed from local ISO media.
 type Import struct {
-	list      kit.List
-	iso       kit.TextField
-	name      kit.TextField
-	osSlug    kit.TextField
-	guest     kit.Picker
-	browse    kit.Button
-	importISO kit.Button
-	cancel    kit.Button
-	guestOS   string
-	fileErr   string
-	submitted bool
+	list           kit.List
+	iso            kit.TextField
+	name           kit.TextField
+	osSlug         kit.TextField
+	guest          kit.Picker
+	browse         kit.Button
+	importISO      kit.Button
+	cancel         kit.Button
+	guestOS        string
+	fileErr        string
+	submitted      bool
+	isoValidation  fieldValidation
+	nameValidation fieldValidation
 }
 
 func NewImport() *Import {
@@ -70,18 +72,24 @@ func (p *Import) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 		}
 	}
 	if p.cancel.Clicked(gtx) {
+		p.submitted = false
+		p.fileErr = ""
+		p.isoValidation.reset()
+		p.nameValidation.reset()
 		e.Nav.CloseDraft()
 	}
-	return pageLayout(gtx, e, &p.list, "Import an ISO", p.body(e))
+	return pageLayout(gtx, e, &p.list, "Import an ISO", draftColumn(p.body(e)))
 }
 
 func (p *Import) body(e *env.Env) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
+		p.isoValidation.update(gtx, &p.iso)
+		p.nameValidation.update(gtx, &p.name)
 		isoErr, machineErr := p.fileErr, ""
-		if p.submitted {
-			if isoErr == "" {
-				isoErr = isoError(p.iso.Text())
-			}
+		if p.isoValidation.show(p.submitted) && isoErr == "" {
+			isoErr = isoError(p.iso.Text())
+		}
+		if p.nameValidation.show(p.submitted) {
 			machineErr = nameError(p.name.Text())
 		}
 		isoRow := func(gtx layout.Context) layout.Dimensions {
@@ -117,6 +125,9 @@ func (p *Import) body(e *env.Env) layout.Widget {
 			if nameError(p.name.Text()) == "" && isoError(p.iso.Text()) == "" && p.fileErr == "" {
 				name := p.name.Text()
 				e.Ops.Import(name, strings.TrimSpace(p.iso.Text()), p.guestOS, strings.TrimSpace(p.osSlug.Text()))
+				p.submitted = false
+				p.isoValidation.reset()
+				p.nameValidation.reset()
 				e.Nav.Select(model.NewID(model.KindMachine, name))
 			}
 		}

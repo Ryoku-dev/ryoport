@@ -104,6 +104,52 @@ func pageLayout(gtx layout.Context, e *env.Env, list *kit.List, title string, bo
 	})
 }
 
+type fieldValidation struct {
+	initialized bool
+	focused     bool
+	edited      bool
+	left        bool
+	text        string
+}
+
+func (v *fieldValidation) update(gtx layout.Context, field *kit.TextField) {
+	text := field.Text()
+	focused := gtx.Focused(&field.Editor)
+	if !v.initialized {
+		v.initialized = true
+		v.focused = focused
+		v.text = text
+		return
+	}
+	if text != v.text {
+		if v.focused || focused {
+			v.edited = true
+		}
+		v.text = text
+	}
+	if v.focused && !focused && v.edited {
+		v.left = true
+	}
+	v.focused = focused
+}
+
+func (v *fieldValidation) show(submitted bool) bool {
+	return submitted || v.left
+}
+
+func (v *fieldValidation) reset() {
+	*v = fieldValidation{}
+}
+
+func draftColumn(w layout.Widget) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		width := min(gtx.Constraints.Max.X, gtx.Dp(640))
+		gtx.Constraints.Min.X = width
+		gtx.Constraints.Max.X = width
+		return w(gtx)
+	}
+}
+
 func fullWidth(w layout.Widget) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		gtx.Constraints.Min.X = gtx.Constraints.Max.X

@@ -16,18 +16,19 @@ import (
 
 // Instant is the draft for a provisioned cloud-image machine.
 type Instant struct {
-	list        kit.List
-	image       kit.Picker
-	name        kit.TextField
-	packages    kit.TextField
-	tools       map[string]*kit.Toggle
-	disposable  kit.Toggle
-	sealed      kit.Toggle
-	make        kit.Button
-	cancel      kit.Button
-	imageOS     string
-	initialized bool
-	submitted   bool
+	list           kit.List
+	image          kit.Picker
+	name           kit.TextField
+	packages       kit.TextField
+	tools          map[string]*kit.Toggle
+	disposable     kit.Toggle
+	sealed         kit.Toggle
+	make           kit.Button
+	cancel         kit.Button
+	imageOS        string
+	initialized    bool
+	submitted      bool
+	nameValidation fieldValidation
 }
 
 func NewInstant() *Instant {
@@ -47,9 +48,11 @@ func nameError(name string) string {
 func (p *Instant) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	p.initialize(e)
 	if p.cancel.Clicked(gtx) {
+		p.submitted = false
+		p.nameValidation.reset()
 		e.Nav.CloseDraft()
 	}
-	return pageLayout(gtx, e, &p.list, "Instant cloud machine", p.body(e))
+	return pageLayout(gtx, e, &p.list, "Instant cloud machine", draftColumn(p.body(e)))
 }
 
 func (p *Instant) initialize(e *env.Env) {
@@ -69,6 +72,7 @@ func (p *Instant) initialize(e *env.Env) {
 
 func (p *Instant) body(e *env.Env) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
+		p.nameValidation.update(gtx, &p.name)
 		if len(e.Snap.Catalog.Cloud) == 0 {
 			return kit.Empty(e.Th, icons.Cloud, "No cloud images are available", "Refresh the catalogue, then try again.")(gtx)
 		}
@@ -92,7 +96,7 @@ func (p *Instant) body(e *env.Env) layout.Widget {
 			return dims
 		}
 		nameErr := ""
-		if p.submitted {
+		if p.nameValidation.show(p.submitted) {
 			nameErr = nameError(p.name.Text())
 		}
 		nameField := func(gtx layout.Context) layout.Dimensions {
@@ -134,6 +138,8 @@ func (p *Instant) body(e *env.Env) layout.Widget {
 					OS: p.imageOS, Name: name, Disposable: p.disposable.Value, Sealed: p.sealed.Value,
 					Tools: p.selectedTools(e.Snap.Catalog.ToolSets), Pkgs: strings.Fields(p.packages.Text()),
 				})
+				p.submitted = false
+				p.nameValidation.reset()
 				e.Nav.Select(model.NewID(model.KindMachine, name))
 			}
 		}

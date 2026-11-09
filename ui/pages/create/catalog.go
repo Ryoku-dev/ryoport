@@ -14,6 +14,7 @@ import (
 	"github.com/ryoku-dev/ryoport/internal/build"
 	"github.com/ryoku-dev/ryoport/internal/model"
 	"github.com/ryoku-dev/ryoport/internal/store"
+	"github.com/ryoku-dev/ryoport/ui/anim"
 	"github.com/ryoku-dev/ryoport/ui/env"
 	"github.com/ryoku-dev/ryoport/ui/icons"
 	"github.com/ryoku-dev/ryoport/ui/kit"
@@ -21,26 +22,35 @@ import (
 
 // Catalog is the operating-system catalogue used to make a local machine.
 type Catalog struct {
-	search             kit.Search
-	list, grid, detail kit.List
-	tiles              map[string]*kit.Click
-	selected           string
-	release            string
-	edition            string
-	releases           kit.Picker
-	editions           kit.Picker
-	create             kit.Button
-	install            kit.Button
-	retry              kit.Button
-	back               kit.Button
-	pendingJob         string
-	cursor             int
-	lastQuery          string
-	searchFocused      bool
+	search        kit.Search
+	list, grid    kit.List
+	tiles         map[string]*kit.Click
+	focus         map[string]*anim.Tween
+	prefetched    map[string]struct{}
+	dialog        kit.Dialog
+	releases      kit.Picker
+	editions      kit.Picker
+	create        kit.Button
+	cancel        kit.Button
+	install       kit.Button
+	retry         kit.Button
+	selected      string
+	release       string
+	edition       string
+	pendingJob    string
+	cursor        int
+	lastQuery     string
+	searchFocused bool
+	focusRelease  bool
 }
 
 func New() *Catalog {
-	catalog := &Catalog{tiles: make(map[string]*kit.Click)}
+	catalog := &Catalog{
+		tiles:      make(map[string]*kit.Click),
+		focus:      make(map[string]*anim.Tween),
+		prefetched: make(map[string]struct{}),
+		dialog:     kit.Dialog{Width: 720},
+	}
 	catalog.search.Submit = true
 	return catalog
 }
@@ -102,6 +112,12 @@ func wordByte(c byte) bool {
 
 func (c *Catalog) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	c.followPending(e)
+	dims := c.layoutPage(gtx, e)
+	c.layoutDialog(gtx, e)
+	return dims
+}
+
+func (c *Catalog) layoutPage(gtx layout.Context, e *env.Env) layout.Dimensions {
 	if c.install.Clicked(gtx) {
 		e.Ops.InstallEngine()
 	}
@@ -148,9 +164,13 @@ func (c *Catalog) followPending(e *env.Env) {
 		}
 		if job.Target != "" {
 			c.pendingJob = ""
+			c.dialog.Open = false
+			c.selected = ""
 			e.Nav.Select(job.Target)
 		} else if job.State != model.JobRunning {
 			c.pendingJob = ""
+			c.dialog.Open = false
+			c.selected = ""
 			e.Nav.Go(store.PageFleet)
 		}
 		return
@@ -158,39 +178,7 @@ func (c *Catalog) followPending(e *env.Env) {
 }
 
 func (c *Catalog) layoutBody(gtx layout.Context, e *env.Env) layout.Dimensions {
-	if c.back.Clicked(gtx) {
-		c.selected = ""
-		c.search.Focus(gtx)
-		c.searchFocused = true
-	}
-	if e.Class == env.Compact && c.selected != "" {
-		system, _ := c.selectedSystem(e.Snap.Catalog.OS)
-		return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return c.back.Layout(gtx, e.Th, kit.Line, icons.ArrowBack, "Back")
-			}),
-			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-				return c.detailColumn(gtx, e, &system)
-			}),
-		)
-	}
-	if e.Class == env.Compact {
-		return c.gridColumn(gtx, e)
-	}
-	detailWidth := min(gtx.Dp(360), max(gtx.Dp(240), gtx.Constraints.Max.X/2))
-	return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
-		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-			return c.gridColumn(gtx, e)
-		}),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Min.X = detailWidth
-			gtx.Constraints.Max.X = detailWidth
-			if system, ok := c.selectedSystem(e.Snap.Catalog.OS); ok {
-				return c.detailColumn(gtx, e, &system)
-			}
-			return c.detailColumn(gtx, e, nil)
-		}),
-	)
+	return c.gridColumn(gtx, e)
 }
 
 func (c *Catalog) gridColumn(gtx layout.Context, e *env.Env) layout.Dimensions {
@@ -238,8 +226,9 @@ func (c *Catalog) gridColumn(gtx layout.Context, e *env.Env) layout.Dimensions {
 
 func catalogColumns(gtx layout.Context, n int) int {
 	gap := gtx.Dp(4)
+	available := max(1, gtx.Constraints.Max.X-2*gtx.Dp(4))
 	width := max(1, gtx.Dp(200))
-	columns := max(1, (gtx.Constraints.Max.X+gap)/(width+gap))
+	columns := max(1, (available+gap)/(width+gap))
 	if n > 0 {
 		columns = min(columns, n)
 	}
@@ -325,19 +314,31 @@ func (c *Catalog) layoutGrid(gtx layout.Context, e *env.Env, systems []build.OS,
 		return kit.Empty(e.Th, icons.DesktopWindows, "No systems found", "Try a name or catalogue slug.")(gtx)
 	}
 	rows := (len(systems) + columns - 1) / columns
+	gap := gtx.Dp(e.Th.Sp.S1)
 	return c.grid.Layout(gtx, e.Th, rows, func(gtx layout.Context, row int) layout.Dimensions {
+		top := e.Th.Sp.S1
+		if row != 0 {
+			top = 0
+		}
 		bottom := e.Th.Sp.S1
 		if row == rows-1 {
-			bottom = 0
+			bottom = 4
 		}
-		return layout.Inset{Bottom: bottom}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-			return kit.Columns(gtx, 200, e.Th.Sp.S1, columns, func(gtx layout.Context, column int) layout.Dimensions {
+		return layout.Inset{Top: top, Right: 4, Bottom: bottom, Left: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			tileWidth := min(gtx.Dp(260), max(1, (gtx.Constraints.Max.X-gap*(columns-1))/columns))
+			children := make([]layout.FlexChild, 0, columns)
+			for column := range columns {
 				index := row*columns + column
 				if index >= len(systems) {
-					return layout.Dimensions{Size: gtx.Constraints.Constrain(image.Pt(gtx.Constraints.Max.X, gtx.Dp(128)))}
+					break
 				}
-				return c.tile(gtx, e, systems[index], index)
-			})
+				children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = tileWidth
+					gtx.Constraints.Max.X = tileWidth
+					return c.tile(gtx, e, systems[index], index)
+				}))
+			}
+			return layout.Flex{Axis: layout.Horizontal, Gap: gap}.Layout(gtx, children...)
 		})
 	})
 }
@@ -354,6 +355,9 @@ func (c *Catalog) tile(gtx layout.Context, e *env.Env, system build.OS, index in
 	}
 	keyboard := index == c.cursor
 	selected := c.selected == system.OS
+	if click.Hovered() || keyboard {
+		c.prefetchLogo(gtx, e, system)
+	}
 	background := e.Th.R.Stone3
 	nameInk := e.Th.R.Fg
 	logoInk := e.Th.R.Fg2
@@ -381,9 +385,20 @@ func (c *Catalog) tile(gtx layout.Context, e *env.Env, system build.OS, index in
 			)
 		}))
 	})
-	if keyboard {
-		kit.FocusRing(gtx, e.Th, image.Rectangle{Max: dims.Size}, gtx.Dp(e.Th.Cut.Mid))
+	focus := c.focus[system.OS]
+	if focus == nil {
+		focus = &anim.Tween{Duration: e.Th.Motion.Hover * 3 / 4, Ease: anim.EaseChisel}
+		focus.Set(gtx, 0)
+		c.focus[system.OS] = focus
 	}
+	if keyboard {
+		focus.Duration = e.Th.Motion.Hover * 3 / 4
+		focus.Set(gtx, 1)
+	} else {
+		focus.Duration = e.Th.Motion.Hover * 5 / 8
+		focus.Set(gtx, 0)
+	}
+	kit.FocusRingAlpha(gtx, e.Th, image.Rectangle{Max: dims.Size}, gtx.Dp(e.Th.Cut.Mid), focus.Value(gtx))
 	return dims
 }
 
@@ -391,7 +406,8 @@ func (c *Catalog) selectSystem(system build.OS) {
 	c.selected = system.OS
 	c.release = build.DefaultRelease(system)
 	c.edition = build.DefaultEdition(system, c.release)
-	c.detail.ScrollTo(0)
+	c.dialog.Open = true
+	c.focusRelease = true
 }
 
 func (c *Catalog) selectedSystem(systems []build.OS) (build.OS, bool) {
@@ -403,70 +419,122 @@ func (c *Catalog) selectedSystem(systems []build.OS) (build.OS, bool) {
 	return build.OS{}, false
 }
 
-func (c *Catalog) detailColumn(gtx layout.Context, e *env.Env, system *build.OS) layout.Dimensions {
-	gtx.Constraints.Min.Y = gtx.Constraints.Max.Y
-	if system == nil {
-		return kit.Slab(gtx, e.Th.R.Stone3, e.Th.Cut.Mid, inset(21, 21, 21, 21, func(gtx layout.Context) layout.Dimensions {
-			return layout.NW.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return (kit.Label{Style: e.Th.T.Body, Color: e.Th.R.Fg3}).Layout(gtx, e.Th, "Choose a system to see its releases and editions.")
-			})
-		}))
+func (c *Catalog) layoutDialog(gtx layout.Context, e *env.Env) {
+	system, ok := c.selectedSystem(e.Snap.Catalog.OS)
+	if !ok {
+		c.dialog.Open = false
+		c.dialog.Layout(gtx, e.Th, "", func(layout.Context) layout.Dimensions {
+			return layout.Dimensions{}
+		})
+		if c.dialog.Closed(gtx) {
+			c.focusRelease = false
+			c.search.Focus(gtx)
+			c.searchFocused = true
+		}
+		return
+	}
+	if c.focusRelease && c.dialog.Open {
+		c.releases.Focus(gtx)
+		c.focusRelease = false
 	}
 	releaseIndex := stringIndex(system.Releases, c.release)
 	editionOptions := system.Editions[c.release]
 	editionIndex := stringIndex(editionOptions, c.edition)
+	if c.cancel.Clicked(gtx) {
+		c.dialog.Open = false
+	}
 	if c.create.Clicked(gtx) && c.pendingJob == "" {
 		c.pendingJob = e.Ops.Create(system.OS, c.release, c.edition)
 		if c.pendingJob == "" {
+			c.dialog.Open = false
+			c.selected = ""
 			e.Nav.Go(store.PageFleet)
 		}
 	}
 	c.create.Busy = c.pendingJob != ""
-	return kit.Slab(gtx, e.Th.R.Stone3, e.Th.Cut.Mid, func(gtx layout.Context) layout.Dimensions {
-		return c.detail.Layout(gtx, e.Th, 1, func(gtx layout.Context, _ int) layout.Dimensions {
-			return layout.Inset{Top: 21, Right: 21, Bottom: 21, Left: 21}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				logo := e.Logos.Widget(e.Snap.Catalog.Logos[system.OS], 64, system.Name, e.Th.R.Fg2)
-				facts := kit.Facts(e.Th, []kit.Fact{
+
+	body := func(gtx layout.Context) layout.Dimensions {
+		logo := e.Logos.Widget(e.Snap.Catalog.Logos[system.OS], 64, system.Name, e.Th.R.Fg2)
+		header := func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle, Gap: gtx.Dp(e.Th.Sp.S4)}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					gtx.Constraints.Min.X = 0
+					return logo(gtx)
+				}),
+				layout.Flexed(1, kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, system.Name)),
+			)
+		}
+		facts := func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S4)}.Layout(gtx,
+				layout.Flexed(1, kit.Facts(e.Th, []kit.Fact{
 					{Label: "Releases", Value: strconv.Itoa(len(system.Releases)), Mono: true},
-					{Label: "Editions", Value: catalogueEditions(*system)},
+					{Label: "Editions", Value: catalogueEditions(system)},
+				})),
+				layout.Flexed(1, kit.Facts(e.Th, []kit.Fact{
 					{Label: "CPU", Value: strconv.Itoa(e.Snap.Settings.Defaults.Cores) + " cores", Mono: true},
 					{Label: "Memory", Value: strconv.Itoa(e.Snap.Settings.Defaults.RAMGB) + " GB", Mono: true},
 					{Label: "Disk", Value: strconv.Itoa(e.Snap.Settings.Defaults.DiskGB) + " GB", Mono: true},
-				})
-				releasePicker := func(gtx layout.Context) layout.Dimensions {
-					dims := c.releases.Layout(gtx, e.Th, "Release", system.Releases, releaseIndex)
-					if index, changed := c.releases.Changed(gtx); changed && index >= 0 && index < len(system.Releases) {
-						c.release = system.Releases[index]
-						c.edition = build.DefaultEdition(*system, c.release)
-					}
-					return dims
-				}
-				editionPicker := func(gtx layout.Context) layout.Dimensions {
-					if len(editionOptions) == 0 {
-						return layout.Dimensions{}
-					}
-					dims := c.editions.Layout(gtx, e.Th, "Edition", editionOptions, editionIndex)
-					if index, changed := c.editions.Changed(gtx); changed && index >= 0 && index < len(editionOptions) {
-						c.edition = editionOptions[index]
-					}
-					return dims
-				}
-				return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						gtx.Constraints.Min.X = 0
-						return logo(gtx)
-					}),
-					layout.Rigid(kit.Text(e.Th, e.Th.T.Section, e.Th.R.Fg, system.Name)),
-					layout.Rigid(facts),
-					layout.Rigid(fullWidth(releasePicker)),
-					layout.Rigid(fullWidth(editionPicker)),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return c.create.Layout(gtx, e.Th, kit.Gold, icons.PlayArrow, "Create")
-					}),
-				)
-			})
-		})
-	})
+				})),
+			)
+		}
+		releasePicker := func(gtx layout.Context) layout.Dimensions {
+			dims := c.releases.Layout(gtx, e.Th, "Release", system.Releases, releaseIndex)
+			if index, changed := c.releases.Changed(gtx); changed && index >= 0 && index < len(system.Releases) {
+				c.release = system.Releases[index]
+				c.edition = build.DefaultEdition(system, c.release)
+			}
+			return dims
+		}
+		editionPicker := func(gtx layout.Context) layout.Dimensions {
+			dims := c.editions.Layout(gtx, e.Th, "Edition", editionOptions, editionIndex)
+			if index, changed := c.editions.Changed(gtx); changed && index >= 0 && index < len(editionOptions) {
+				c.edition = editionOptions[index]
+			}
+			return dims
+		}
+		pickers := func(gtx layout.Context) layout.Dimensions {
+			if len(editionOptions) == 0 {
+				return fullWidth(releasePicker)(gtx)
+			}
+			return layout.Flex{Axis: layout.Horizontal, Gap: gtx.Dp(e.Th.Sp.S3)}.Layout(gtx,
+				layout.Flexed(1, fullWidth(releasePicker)),
+				layout.Flexed(1, fullWidth(editionPicker)),
+			)
+		}
+		return layout.Flex{Axis: layout.Vertical, Gap: gtx.Dp(e.Th.Sp.S4)}.Layout(gtx,
+			layout.Rigid(header),
+			layout.Rigid(facts),
+			layout.Rigid(pickers),
+		)
+	}
+	create := func(gtx layout.Context) layout.Dimensions {
+		return c.create.Layout(gtx, e.Th, kit.Gold, icons.PlayArrow, "Create")
+	}
+	cancel := func(gtx layout.Context) layout.Dimensions {
+		return c.cancel.Layout(gtx, e.Th, kit.Line, nil, "Cancel")
+	}
+	c.dialog.Layout(gtx, e.Th, "", body, create, cancel)
+	if c.dialog.Closed(gtx) {
+		c.selected = ""
+		c.focusRelease = false
+		c.search.Focus(gtx)
+		c.searchFocused = true
+	}
+}
+
+func (c *Catalog) prefetchLogo(gtx layout.Context, e *env.Env, system build.OS) {
+	path := e.Snap.Catalog.Logos[system.OS]
+	pixels := max(1, gtx.Dp(64))
+	key := path + "\x00" + strconv.Itoa(pixels)
+	if _, ok := c.prefetched[key]; ok {
+		return
+	}
+	c.prefetched[key] = struct{}{}
+	var operations op.Ops
+	prefetch := gtx
+	prefetch.Ops = &operations
+	prefetch.Constraints = layout.Exact(image.Pt(pixels, pixels))
+	e.Logos.Widget(path, 64, system.Name, e.Th.R.Fg2)(prefetch)
 }
 
 func catalogueEditions(system build.OS) string {

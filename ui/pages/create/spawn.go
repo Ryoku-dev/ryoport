@@ -12,15 +12,16 @@ import (
 
 // Spawn is the draft for copying a prepared template.
 type Spawn struct {
-	list         kit.List
-	template     kit.Picker
-	name         kit.TextField
-	disposable   kit.Toggle
-	make         kit.Button
-	cancel       kit.Button
-	templateName string
-	initialized  bool
-	submitted    bool
+	list           kit.List
+	template       kit.Picker
+	name           kit.TextField
+	disposable     kit.Toggle
+	make           kit.Button
+	cancel         kit.Button
+	templateName   string
+	initialized    bool
+	submitted      bool
+	nameValidation fieldValidation
 }
 
 func NewSpawn() *Spawn { return &Spawn{} }
@@ -28,9 +29,11 @@ func NewSpawn() *Spawn { return &Spawn{} }
 func (p *Spawn) Layout(gtx layout.Context, e *env.Env) layout.Dimensions {
 	p.initialize(e)
 	if p.cancel.Clicked(gtx) {
+		p.submitted = false
+		p.nameValidation.reset()
 		e.Nav.CloseDraft()
 	}
-	return pageLayout(gtx, e, &p.list, "Make from a template", p.body(e))
+	return pageLayout(gtx, e, &p.list, "Make from a template", draftColumn(p.body(e)))
 }
 
 func (p *Spawn) initialize(e *env.Env) {
@@ -47,6 +50,7 @@ func (p *Spawn) initialize(e *env.Env) {
 
 func (p *Spawn) body(e *env.Env) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
+		p.nameValidation.update(gtx, &p.name)
 		templates := e.Snap.Catalog.Templates
 		if len(templates) == 0 {
 			return kit.Empty(e.Th, icons.ContentCopy, "No templates yet", "Make a template from a stopped machine first.")(gtx)
@@ -71,7 +75,7 @@ func (p *Spawn) body(e *env.Env) layout.Widget {
 			return dims
 		}
 		nameErr := ""
-		if p.submitted {
+		if p.nameValidation.show(p.submitted) {
 			nameErr = nameError(p.name.Text())
 		}
 		nameField := func(gtx layout.Context) layout.Dimensions {
@@ -82,6 +86,8 @@ func (p *Spawn) body(e *env.Env) layout.Widget {
 			if nameError(p.name.Text()) == "" && p.templateName != "" {
 				name := p.name.Text()
 				e.Ops.Spawn(p.templateName, name, p.disposable.Value)
+				p.submitted = false
+				p.nameValidation.reset()
 				e.Nav.Select(model.NewID(model.KindMachine, name))
 			}
 		}
