@@ -1,5 +1,5 @@
 pkgname=ryoport
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 pkgdesc="Fleet dashboard for machines, servers and consoles"
 arch=('x86_64')

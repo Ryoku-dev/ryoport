@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.1
+
+- fix: a failed machine download cleans up only its own new folder
+- docs: release notes say Ryoku delivers Ryoport with its v2 line [skip ci]
+
 ## Unreleased
 
 - **Failed machine downloads only remove their own new partial folder.**

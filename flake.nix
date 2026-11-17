@@ -9,7 +9,7 @@
       pkgs = import nixpkgs { inherit system; };
       ryoport = pkgs.buildGoModule {
         pname = "ryoport";
-        version = "1.0.0";
+        version = "1.0.1";
         src = ./.;
         vendorHash = null;
 
