@@ -49,11 +49,14 @@ func (b *Builder) Create(ctx context.Context, osName, release, edition string, e
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", failEvent(emit, err)
 	}
+	_, dirErr := os.Lstat(b.VM.Dir(name))
+	newDir := errors.Is(dirErr, os.ErrNotExist)
 
 	if !specialCreate[osName] {
 		made, handled, err := b.createFast(ctx, name, osName, release, edition, emit)
 		if handled {
 			if err != nil {
+				b.cleanPartial(name, newDir)
 				return "", failEvent(emit, err)
 			}
 			emitEvent(emit, Event{Phase: PhaseDone, Name: made})
@@ -62,6 +65,7 @@ func (b *Builder) Create(ctx context.Context, osName, release, edition string, e
 	}
 	made, err := b.createFallback(ctx, name, osName, release, edition, emit)
 	if err != nil {
+		b.cleanPartial(name, newDir)
 		return "", failEvent(emit, err)
 	}
 	emitEvent(emit, Event{Phase: PhaseDone, Name: made})
@@ -144,8 +148,6 @@ func (b *Builder) createFallback(ctx context.Context, requested, osName, release
 	if err != nil {
 		return "", err
 	}
-	_, dirErr := os.Stat(b.VM.Dir(requested))
-	dirExisted := dirErr == nil || !errors.Is(dirErr, os.ErrNotExist)
 	args := []string{"quickget", osName, release}
 	if edition != "" {
 		args = append(args, edition)
@@ -185,9 +187,8 @@ func (b *Builder) createFallback(ctx context.Context, requested, osName, release
 	}
 	made, findErr := b.newConfigs(before, osName+"-"+release)
 	if ctx.Err() != nil {
-		b.cleanNewConfigs(made)
-		if !dirExisted {
-			_ = os.RemoveAll(b.VM.Dir(requested))
+		for _, name := range made {
+			_ = os.Remove(b.VM.ConfPath(name))
 		}
 		return "", ctx.Err()
 	}
@@ -215,7 +216,7 @@ func (b *Builder) createFallback(ctx context.Context, requested, osName, release
 		return "", err
 	}
 	if broken {
-		b.cleanDeadConfig(result)
+		_ = os.Remove(b.VM.ConfPath(result))
 		if guest == "windows" || guest == "windows-server" {
 			return "", errors.New("Windows downloads are blocked by Microsoft on this network.\nDownload the ISO in a browser, then use Load ISO")
 		}
@@ -259,13 +260,6 @@ func (b *Builder) newConfigs(before map[string]bool, prefix string) ([]string, e
 		}
 	}
 	return out, nil
-}
-
-func (b *Builder) cleanNewConfigs(names []string) {
-	for _, name := range names {
-		_ = os.Remove(b.VM.ConfPath(name))
-		_ = os.RemoveAll(b.VM.Dir(name))
-	}
 }
 
 func stampOS(path, osName string) error {
@@ -313,10 +307,23 @@ func (b *Builder) deadConfig(name string) (bool, string, error) {
 	return false, guest, err
 }
 
-func (b *Builder) cleanDeadConfig(name string) {
-	disks, _ := filepath.Glob(filepath.Join(b.VM.Dir(name), "*.qcow2"))
-	if len(disks) == 0 {
-		_ = os.RemoveAll(b.VM.Dir(name))
+func (b *Builder) cleanPartial(name string, created bool) {
+	if !created || !vm.ValidName(name) {
+		return
 	}
-	_ = os.Remove(b.VM.ConfPath(name))
+	dir := b.VM.Dir(name)
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".qcow2") {
+			return
+		}
+	}
+	_ = os.RemoveAll(dir)
 }

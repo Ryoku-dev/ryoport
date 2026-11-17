@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Failed machine downloads only remove their own new partial folder.**
+  Existing folders, disk images and symbolic links are preserved.
+
 ## v1.0.0
 
 - Brings machines, passthrough machines, servers and consoles into one window.
